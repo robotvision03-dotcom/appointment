@@ -19,16 +19,16 @@ class OfflineSTT:
         self._load()
 
     def _load(self) -> None:
-        model_ok = (self.model_path / "am" / "final.mdl").exists() or (
-            self.model_path / "conf" / "model.conf"
-        ).exists()
-        if not model_ok:
+        resolved = _find_vosk_root(self.model_path)
+        if resolved is None:
             log.warning(
-                "Vosk model not found at %s — STT will return empty transcripts. "
-                "Run scripts/download_models.sh",
+                "Vosk model not found at %s — unzip vosk-model-small-fa-0.5.zip "
+                "so that models\\vosk-model-fa\\conf\\model.conf exists. "
+                "On Windows run: powershell -File scripts\\download_models.ps1",
                 self.model_path,
             )
             return
+        self.model_path = resolved
         try:
             from vosk import Model, SetLogLevel
 
@@ -38,6 +38,26 @@ class OfflineSTT:
             log.info("Loaded Vosk model from %s", self.model_path)
         except Exception as exc:  # noqa: BLE001 — model load must never crash the app
             log.error("Failed to load Vosk model: %s", exc)
+
+
+def _looks_like_vosk(path: Path) -> bool:
+    return (path / "am" / "final.mdl").exists() or (path / "conf" / "model.conf").exists()
+
+
+def _find_vosk_root(path: Path) -> Path | None:
+    """Accept either the model dir itself or a nested unzip folder (vosk-model-small-fa-0.5)."""
+    if _looks_like_vosk(path):
+        return path
+    if not path.exists() or not path.is_dir():
+        return None
+    for child in sorted(path.iterdir()):
+        if child.is_dir() and _looks_like_vosk(child):
+            return child
+        if child.is_dir():
+            for grandchild in sorted(child.iterdir()):
+                if grandchild.is_dir() and _looks_like_vosk(grandchild):
+                    return grandchild
+    return None
 
     def transcribe(self, audio_data: bytes, sample_rate: int = 16000) -> str:
         """Accept raw PCM (16 kHz, mono, 16-bit) and return a Persian transcript."""
