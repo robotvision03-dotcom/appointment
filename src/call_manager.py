@@ -33,13 +33,18 @@ PHASE_BOOKED = "booked"
 PHASE_TRANSFER = "transfer"
 PHASE_DONE = "done"
 
-GREETING_TEXT = "به سامانه نوبت‌دهی خوش آمدید. نام و نام خانوادگی خود را بفرمایید."
-ASK_REPEAT = "متوجه نشدم. لطفاً دوباره بفرمایید."
-ASK_DOCTOR = "برای کدام پزشک وقت می‌خواهید؟"
-ASK_DATE = "چه تاریخی برای ویزیت مد نظر شماست؟ امروز، فردا، یا تاریخ دقیق."
-ASK_TIME = "ساعت مورد نظر شما چند است؟"
-APOLOGY_DB = "متأسفم، در ثبت نوبت مشکلی پیش آمد. لطفاً دوباره تلاش کنید."
-TRANSFER_ACK = "حتماً. الان شما را به منشی وصل می‌کنم. لطفاً روی خط بمانید."
+GREETING_TEXT = (
+    "سلام، وقت بخیر. به بخش نوبت‌دهی کلینیک خوش آمدید. "
+    "لطفاً نام و نام خانوادگی خود را بفرمایید."
+)
+ASK_REPEAT = "ببخشید، متوجه نشدم. ممکن است واضح‌تر تکرار کنید؟"
+ASK_DOCTOR = "نوبت کدام یک از پزشکان کلینیک را می‌خواهید؟"
+ASK_DATE = "چه روزی برای ویزیت مناسب است؟ می‌توانید بگویید امروز، فردا، یا تاریخ دقیق."
+ASK_TIME = "ساعت مورد نظرتان را بفرمایید."
+APOLOGY_DB = "از اختلال پیش‌آمده پوزش می‌خواهیم. لطفاً دوباره برای ثبت نوبت تلاش کنید."
+TRANSFER_ACK = (
+    "چشم، شما را به منشی انسانی کلینیک وصل می‌کنم. لطفاً روی خط بمانید."
+)
 
 
 @dataclass
@@ -122,30 +127,23 @@ class CallManager:
         if wants_transfer(text) and state.phase not in (PHASE_BOOKED, PHASE_DONE):
             return self._begin_transfer(state, text)
 
-        # Try LLM first; fall back to the state machine.
         llm_result = None
         if llm.is_available():
-            doctors_blob = _doctors_prompt()
             llm_result = llm.interpret_turn(
-                text, state.context, doctors_blob, state.patient_info, state.phase
+                text,
+                state.context,
+                _doctors_prompt(),
+                state.patient_info,
+                state.phase,
             )
-
         if llm_result:
             self._merge_extracted(state, llm_result.get("extracted") or {})
             intent = (llm_result.get("intent") or "continue").lower()
-            if intent == "transfer" or wants_transfer(text):
+            if intent == "transfer":
                 return self._begin_transfer(state, text)
-            reply = (llm_result.get("reply") or "").strip()
-            # Still drive booking ourselves so the DB stays consistent.
-            machine = self._advance_machine(state, text, llm_reply=reply)
-            if machine:
-                return machine
-            if not reply:
-                reply = ASK_REPEAT
-            if state.phase == PHASE_GREETING:
-                state.phase = PHASE_ASK_NAME
-            self.update_context(call_sid, text, reply)
-            return self._result(state, reply, intent)
+            spoken = _spoken_reply(llm_result.get("reply"))
+            machine = self._advance_machine(state, text, llm_reply=spoken, prefer_llm=True)
+            return machine
 
         return self._advance_machine(state, text)
 
@@ -176,7 +174,11 @@ class CallManager:
             info["time"] = str(time_val)
 
     def _advance_machine(
-        self, state: CallState, text: str, llm_reply: str | None = None
+        self,
+        state: CallState,
+        text: str,
+        llm_reply: str | None = None,
+        prefer_llm: bool = False,
     ) -> dict[str, Any]:
         info = state.patient_info
         phase = state.phase
@@ -188,10 +190,18 @@ class CallManager:
             if name:
                 info["patient_name"] = name
                 state.phase = PHASE_ASK_DOCTOR
-                reply = f"{name} عزیز، {ASK_DOCTOR} پزشکان ما: {_doctor_names()}."
+                canned = (
+                    f"سپاس {name}. {ASK_DOCTOR} "
+                    f"پزشکان کلینیک: {_doctor_names()}."
+                )
+                reply = _pick_reply(canned, llm_reply, prefer_llm)
                 self.update_context(state.call_sid, text, reply)
                 return self._result(state, reply, "continue")
-            reply = llm_reply or "لطفاً نام و نام خانوادگی خود را بفرمایید."
+            reply = _pick_reply(
+                "لطفاً نام و نام خانوادگی خود را کامل بفرمایید.",
+                llm_reply,
+                prefer_llm,
+            )
             self.update_context(state.call_sid, text, reply)
             return self._result(state, reply, "continue")
 
@@ -202,12 +212,16 @@ class CallManager:
                 info["doctor_name"] = doc["name"]
                 info["specialty"] = doc["specialty"]
                 state.phase = PHASE_ASK_DATE
-                reply = f"نوبت {doc['name']} ({doc['specialty']}). {ASK_DATE}"
+                canned = (
+                    f"{doc['name']}، تخصص {doc['specialty']}، ثبت شد. {ASK_DATE}"
+                )
+                reply = _pick_reply(canned, llm_reply, prefer_llm)
                 self.update_context(state.call_sid, text, reply)
                 return self._result(state, reply, "continue")
-            reply = (
-                llm_reply
-                or f"پزشک مورد نظر پیدا نشد. لطفاً یکی از این اسامی را بفرمایید: {_doctor_names()}."
+            reply = _pick_reply(
+                f"این نام در فهرست پزشکان نیست. لطفاً یکی از این همکاران را بفرمایید: {_doctor_names()}.",
+                llm_reply,
+                prefer_llm,
             )
             self.update_context(state.call_sid, text, reply)
             return self._result(state, reply, "continue")
@@ -220,17 +234,24 @@ class CallManager:
                 slots = db.get_available_slots(info["doctor_id"], parsed)
                 if not slots:
                     reply = (
-                        f"در تاریخ {parsed} نوبت خالی برای {info['doctor_name']} نیست. "
-                        "تاریخ دیگری بفرمایید."
+                        f"در تاریخ {parsed} ظرفیت خالی برای {info['doctor_name']} نداریم. "
+                        "روز دیگری پیشنهاد می‌کنید؟"
                     )
                     info.pop("date", None)
                     state.phase = PHASE_ASK_DATE
                 else:
                     shown = "، ".join(slots[:6])
-                    reply = f"تاریخ {parsed} ثبت شد. {ASK_TIME} ساعات خالی: {shown}."
+                    canned = (
+                        f"برای تاریخ {parsed} این ساعات آزاد است: {shown}. {ASK_TIME}"
+                    )
+                    reply = _pick_reply(canned, llm_reply, prefer_llm)
                 self.update_context(state.call_sid, text, reply)
                 return self._result(state, reply, "continue")
-            reply = llm_reply or "تاریخ را متوجه نشدم. مثلاً بگویید فردا یا ۱۴۰۳/۰۶/۱۵."
+            reply = _pick_reply(
+                "تاریخ را درست متوجه نشدم. مثلاً بفرمایید فردا، پس‌فردا، یا ۱۴۰۳/۰۶/۱۵.",
+                llm_reply,
+                prefer_llm,
+            )
             self.update_context(state.call_sid, text, reply)
             return self._result(state, reply, "continue")
 
@@ -240,19 +261,26 @@ class CallManager:
                 if not db.is_slot_free(info["doctor_id"], info["date"], parsed_time):
                     slots = db.get_available_slots(info["doctor_id"], info["date"])
                     reply = (
-                        f"ساعت {parsed_time} پر است. ساعات خالی: {'، '.join(slots[:8]) or 'هیچ'}."
+                        f"ساعت {parsed_time} قبلاً رزرو شده است. "
+                        f"ساعات آزاد: {'، '.join(slots[:8]) or 'در این روز ظرفیتی نمانده'}."
                     )
                     self.update_context(state.call_sid, text, reply)
                     return self._result(state, reply, "continue")
                 info["time"] = parsed_time
                 state.phase = PHASE_CONFIRM
-                reply = (
-                    f"نوبت شما برای {info['doctor_name']} در تاریخ {info['date']} "
-                    f"ساعت {info['time']} ثبت می‌شود. آیا تأیید می‌کنید؟"
+                canned = (
+                    f"جمع‌بندی نوبت: {info.get('patient_name', '')}، "
+                    f"{info['doctor_name']}، تاریخ {info['date']}، ساعت {info['time']}. "
+                    "اگر موافقید بفرمایید بله تا ثبت شود."
                 )
+                reply = _pick_reply(canned, llm_reply, prefer_llm)
                 self.update_context(state.call_sid, text, reply)
                 return self._result(state, reply, "continue")
-            reply = llm_reply or "ساعت را متوجه نشدم. مثلاً بگویید ساعت ده صبح یا ۱۴:۳۰."
+            reply = _pick_reply(
+                "ساعت را متوجه نشدم. مثلاً بفرمایید ساعت ده صبح یا ۱۴:۳۰.",
+                llm_reply,
+                prefer_llm,
+            )
             self.update_context(state.call_sid, text, reply)
             return self._result(state, reply, "continue")
 
@@ -280,9 +308,9 @@ class CallManager:
                 state.appointment_id = appt_id
                 state.phase = PHASE_BOOKED
                 reply = (
-                    f"نوبت شما با شماره {appt_id} برای {info['doctor_name']} "
+                    f"نوبت شما با شماره پیگیری {appt_id} برای {info['doctor_name']} "
                     f"در تاریخ {info['date']} ساعت {info['time']} ثبت شد. "
-                    "پیامک تأیید برایتان ارسال می‌شود. سلامت باشید."
+                    "موفق و سلامت باشید."
                 )
                 self.update_context(state.call_sid, text, reply)
                 return self._result(state, reply, "book")
@@ -290,15 +318,19 @@ class CallManager:
                 state.phase = PHASE_ASK_DATE
                 info.pop("date", None)
                 info.pop("time", None)
-                reply = "اشکال ندارد. از کدام تاریخ شروع کنیم؟"
+                reply = "در خدمتیم. تاریخ دیگری را بفرمایید تا نوبت را از نو تنظیم کنیم."
                 self.update_context(state.call_sid, text, reply)
                 return self._result(state, reply, "continue")
-            reply = llm_reply or "لطفاً با بله یا خیر تأیید کنید."
+            reply = _pick_reply(
+                "برای ثبت نهایی لطفاً «بله» یا «خیر» بفرمایید.",
+                llm_reply,
+                prefer_llm,
+            )
             self.update_context(state.call_sid, text, reply)
             return self._result(state, reply, "continue")
 
         if phase in (PHASE_BOOKED, PHASE_DONE):
-            reply = "نوبت شما ثبت شده است. اگر کار دیگری ندارید می‌توانید تماس را قطع کنید."
+            reply = "نوبت شما ثبت شده است. اگر موضوع دیگری نیست، می‌توانید گفتگو را پایان دهید."
             self.update_context(state.call_sid, text, reply)
             return self._result(state, reply, "continue")
 
@@ -357,6 +389,26 @@ def _guess_name(text: str) -> str | None:
     if len(parts) == 1 and len(parts[0]) >= 3:
         return parts[0]
     return None
+
+
+def _spoken_reply(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    text = str(raw).strip().strip('"').strip("'")
+    if "{" in text or "}" in text:
+        return None
+    persian = sum(1 for c in text if "\u0600" <= c <= "\u06FF")
+    if persian < 10:
+        return None
+    if len(text) > 280:
+        text = text[:277] + "…"
+    return text
+
+
+def _pick_reply(canned: str, llm_reply: str | None, prefer_llm: bool) -> str:
+    if prefer_llm and llm_reply:
+        return llm_reply
+    return canned
 
 
 call_manager = CallManager()

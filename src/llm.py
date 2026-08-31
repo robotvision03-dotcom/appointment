@@ -1,7 +1,8 @@
-"""Persian LLM client (Ollama) with a structured JSON contract for the receptionist."""
+"""Persian LLM client (Ollama) for a formal clinic receptionist."""
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import httpx
@@ -9,30 +10,32 @@ import httpx
 from src.config import config
 from src.utils import extract_json_object, log
 
-SYSTEM_PROMPT = """تو منشی تلفنی یک کلینیک پزشکی هستی. همیشه به فارسی محاوره‌ای، کوتاه و مؤدب پاسخ بده.
-وظیفه تو گرفتن نوبت است. اطلاعات لازم: نام بیمار، نام پزشک، تاریخ، ساعت.
+SYSTEM_PROMPT = """تو منشی رسمی کلینیک هستی. فقط به فارسی معیار و مؤدب صحبت کن (خطاب با «شما»).
+هرگز انگلیسی حرف نزن. هرگز نگو هوش مصنوعی یا مدل هستی. هرگز JSON را برای بیمار نخوان.
 
-پزشکان کلینیک:
+هدف: گرفتن نوبت. فیلدها: نام کامل، پزشک از فهرست زیر، تاریخ، ساعت.
+پزشکان:
 {doctors}
 
-قوانین:
-- فقط یک سؤال در هر پاسخ بپرس مگر اینکه در حال تأیید نهایی باشی.
-- اگر بیمار خواست با منشی انسان صحبت کند، intent را transfer بگذار.
-- تاریخ را به صورت YYYY-MM-DD و ساعت را به صورت HH:MM (۲۴ ساعته) برگردان.
-- اگر چیزی نامفهوم است، مؤدبانه دوباره بپرس.
+سبک:
+- کوتاه (حداکثر دو جمله گفتاری).
+- در هر نوبت فقط یک سؤال بپرس، مگر وقتی خلاصه نوبت را برای تأیید می‌خوانی.
+- اگر چند اطلاعات یک‌جا گفته شد، همان‌ها را ثبت کن و فقط مورد ناقص را بپرس.
+- اگر خواستند با انسان صحبت کنند intent=transfer.
+- تاریخ: YYYY-MM-DD — ساعت: HH:MM بیست‌وچهارساعته.
 
-خروجی را فقط به صورت JSON با این کلیدها برگردان:
+خروجی فقط JSON:
 {{
-  "reply": "متن گفتاری که باید برای بیمار پخش شود",
-  "intent": "continue" یا "book" یا "transfer" یا "cancel",
+  "reply": "جمله‌ای که باید با صدای منشی پخش شود",
+  "intent": "continue" | "book" | "transfer" | "cancel",
   "extracted": {{
-    "patient_name": null یا رشته,
-    "doctor_name": null یا رشته,
-    "date": null یا "YYYY-MM-DD",
-    "time": null یا "HH:MM",
-    "confirmed": null یا true یا false
+    "patient_name": null | string,
+    "doctor_name": null | string,
+    "date": null | "YYYY-MM-DD",
+    "time": null | "HH:MM",
+    "confirmed": null | true | false
   }},
-  "phase": "greeting" یا "ask_name" یا "ask_doctor" یا "ask_date" یا "ask_time" یا "confirm" یا "booked" یا "transfer"
+  "phase": "ask_name" | "ask_doctor" | "ask_date" | "ask_time" | "confirm" | "booked" | "transfer"
 }}
 """
 
@@ -41,11 +44,12 @@ class PersianLLM:
     def __init__(self, url: str | None = None, model: str | None = None) -> None:
         self.url = (url or config.ollama_url).rstrip("/")
         self.model = model or config.ollama_model
-        self.timeout = 25.0
+        self.timeout = 35.0
         self.last_error: str | None = None
+        self._avail: bool | None = None
+        self._avail_at = 0.0
 
     def _client(self, timeout: float | None = None) -> httpx.Client:
-        # trust_env=False: Iranian VPN/proxy env vars must not hijack localhost.
         return httpx.Client(timeout=timeout or self.timeout, trust_env=False)
 
     def _candidate_urls(self) -> list[str]:
@@ -56,22 +60,28 @@ class PersianLLM:
         return urls
 
     def is_available(self) -> bool:
+        now = time.monotonic()
+        if self._avail is not None and now - self._avail_at < 20:
+            return self._avail
         self.last_error = None
         last_exc = None
+        ok = False
         for base in self._candidate_urls():
             try:
-                with self._client(timeout=3.0) as client:
+                with self._client(timeout=2.5) as client:
                     r = client.get(f"{base}/api/tags")
                 if r.status_code == 200:
                     if base != self.url:
-                        log.info("Ollama reachable at %s (OLLAMA_URL was %s)", base, self.url)
                         self.url = base
-                    return True
+                    ok = True
+                    break
                 last_exc = f"HTTP {r.status_code} from {base}"
             except Exception as exc:  # noqa: BLE001
                 last_exc = f"{base}: {exc}"
-        self.last_error = last_exc
-        return False
+        self._avail = ok
+        self._avail_at = now
+        self.last_error = None if ok else last_exc
+        return ok
 
     def list_models(self) -> list[str]:
         if not self.is_available():
@@ -84,16 +94,16 @@ class PersianLLM:
             return []
 
     def generate_response(self, prompt: str, context: list[dict[str, str]] | None = None) -> str:
-        """Send a prompt to Ollama and return generated text (empty string on failure)."""
         messages: list[dict[str, str]] = []
         if context:
-            messages.extend(context)
+            messages.extend(context[-8:])
         messages.append({"role": "user", "content": prompt})
         payload = {
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": 0.3, "num_predict": 256},
+            "format": "json",
+            "options": {"temperature": 0.2, "num_predict": 220, "top_p": 0.9},
         }
         try:
             with self._client() as client:
@@ -114,13 +124,22 @@ class PersianLLM:
         patient_info: dict[str, Any],
         phase: str,
     ) -> dict[str, Any] | None:
-        """Ask the LLM for a structured next action. Returns None on timeout/parse failure."""
         system = SYSTEM_PROMPT.format(doctors=doctors_blob)
+        missing = []
+        if not patient_info.get("patient_name"):
+            missing.append("نام")
+        if not patient_info.get("doctor_id") and not patient_info.get("doctor_name"):
+            missing.append("پزشک")
+        if not patient_info.get("date"):
+            missing.append("تاریخ")
+        if not patient_info.get("time"):
+            missing.append("ساعت")
         prompt = (
-            f"فاز فعلی: {phase}\n"
-            f"اطلاعات جمع‌شده تا الان: {patient_info}\n"
-            f"آخرین گفته بیمار: {user_text}\n"
-            "JSON را برگردان."
+            f"مرحله: {phase}\n"
+            f"ثبت‌شده: {patient_info}\n"
+            f"هنوز ناقص: {', '.join(missing) or 'هیچ (فقط تأیید)'}\n"
+            f"گفته بیمار: {user_text}\n"
+            "JSON."
         )
         messages = [{"role": "system", "content": system}, *history]
         raw = self.generate_response(prompt, messages)
@@ -129,12 +148,7 @@ class PersianLLM:
         parsed = extract_json_object(raw)
         if not parsed:
             log.warning("LLM returned non-JSON: %s", raw[:200])
-            return {
-                "reply": raw,
-                "intent": "continue",
-                "extracted": {},
-                "phase": phase,
-            }
+            return None
         return parsed
 
 

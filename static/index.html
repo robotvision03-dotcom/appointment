@@ -234,7 +234,7 @@
         ["پیامک کاوه‌نگار", h.sms && h.sms.available],
       ];
       document.getElementById("status").innerHTML = pills.map(([n, ok]) =>
-        `<span class="pill ${ok ? "ok" : "off"}">${n}: ${ok ? "فعال" : "غیرفعال"}</span>`
+        `<span class="pill ${ok ? "ok" : "off"}" title="${n === "Ollama" && h.llm && h.llm.error ? escapeHtml(h.llm.error) : ""}">${n}: ${ok ? "فعال" : "غیرفعال"}</span>`
       ).join("");
     }
 
