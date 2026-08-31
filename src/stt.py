@@ -19,7 +19,10 @@ class OfflineSTT:
         self._load()
 
     def _load(self) -> None:
-        if not self.model_path.exists():
+        model_ok = (self.model_path / "am" / "final.mdl").exists() or (
+            self.model_path / "conf" / "model.conf"
+        ).exists()
+        if not model_ok:
             log.warning(
                 "Vosk model not found at %s — STT will return empty transcripts. "
                 "Run scripts/download_models.sh",
