@@ -77,10 +77,10 @@ def load_config() -> Config:
         kavenegar_sender=_env("KAVENEGAR_SENDER"),
         vosk_model_path=_resolve_path(_env("VOSK_MODEL_PATH", "./models/vosk-model-fa")),
         piper_model_path=_resolve_path(
-            _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mena-medium.onnx")
+            _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx")
         ),
         piper_config_path=_resolve_path(
-            _env("PIPER_CONFIG_PATH", "./models/piper-voice-fa/fa_IR-mena-medium.onnx.json")
+            _env("PIPER_CONFIG_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx.json")
         ),
         ollama_url=_env("OLLAMA_URL", "http://localhost:11434").rstrip("/"),
         ollama_model=_env("OLLAMA_MODEL", "persianllama:7b"),
