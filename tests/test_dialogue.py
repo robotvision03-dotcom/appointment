@@ -55,6 +55,29 @@ def test_transfer_phrase():
     assert wants_transfer("می‌خواهم با منشی صحبت کنم")
 
 
+def test_iran_mobile_normalize():
+    from src.sms import normalize_iran_mobile, send_sms
+
+    assert normalize_iran_mobile("09121234567") == "989121234567"
+    assert normalize_iran_mobile("+98 912 123 4567") == "989121234567"
+    result = send_sms("09121234567", "نوبت ثبت شد")
+    assert result["ok"] is False
+    assert result["reason"] == "kavenegar_not_configured"
+
+
+def test_handoff_click_to_call():
+    from src.handoff import start_warm_transfer
+
+    sid = "handoff-call"
+    call_manager.end_call(sid)
+    call_manager.start_call(sid, from_number="09120000000")
+    call_manager.handle_user_text(sid, "می‌خواهم با منشی صحبت کنم")
+    out = start_warm_transfer(sid)
+    assert out["ok"] is True
+    assert out["method"] == "click_to_call"
+    assert out["tel_url"].startswith("tel:")
+
+
 def test_full_booking_dialogue(isolated_db, monkeypatch):
     monkeypatch.setattr("src.call_manager.llm.is_available", lambda: False)
     sid = "unit-call"

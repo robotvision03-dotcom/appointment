@@ -223,23 +223,9 @@ def _twilio_client():
 
 
 def _maybe_send_sms(call_sid: str) -> None:
-    body = call_manager.sms_body(call_sid)
-    state = call_manager.get(call_sid)
-    if not body or not state or not state.from_number:
-        return
-    client = _twilio_client()
-    if client is None:
-        log.warning("SMS skipped — Twilio credentials missing. Body would be: %s", body)
-        return
-    try:
-        client.messages.create(
-            body=body,
-            from_=config.twilio_phone_number,
-            to=state.from_number,
-        )
-        log.info("Confirmation SMS sent to %s", state.from_number)
-    except Exception as exc:  # noqa: BLE001
-        log.error("SMS failed: %s", exc)
+    from src.sms import send_booking_sms
+
+    send_booking_sms(call_sid)
 
 
 def start_warm_transfer(call_sid: str) -> dict[str, Any]:

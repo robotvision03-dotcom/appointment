@@ -87,7 +87,26 @@
       display: flex;
       gap: 0.5rem;
       margin-top: 0.75rem;
+      flex-wrap: wrap;
     }
+    form.composer input[type=text], form.composer input[type=tel] {
+      flex: 1;
+      min-width: 140px;
+    }
+    button.live.on {
+      background: var(--danger);
+      color: #fff;
+    }
+    .transfer-box {
+      margin-top: 0.6rem;
+      padding: 0.7rem 0.85rem;
+      border: 1px dashed var(--accent-2);
+      border-radius: 10px;
+      background: #2a2618;
+      font-size: 0.9rem;
+      line-height: 1.7;
+    }
+    .transfer-box a { color: var(--accent); }
     input[type=text] {
       flex: 1;
       background: var(--bg);
@@ -125,22 +144,27 @@
   <header>
     <div>
       <h1>منشی صوتی نوبت‌دهی پزشکی</h1>
-      <p class="sub">گفتگوی فارسی برای رزرو نوبت. بدون تماس تلفنی هم می‌توانید جریان را اینجا آزمایش کنید.</p>
+      <p class="sub">رزرو نوبت از داخل ایران: گفتگوی متنی یا تماس صوتی داخل مرورگر. پیامک با کاوه‌نگار. بدون Twilio.</p>
     </div>
     <div class="pills" id="status"></div>
   </header>
   <main>
     <section class="card">
-      <h2>شبیه‌ساز تماس</h2>
+      <h2>گفتگو با منشی</h2>
       <div id="log"></div>
       <form class="composer" id="form">
         <button type="button" class="secondary" id="reset">تماس جدید</button>
+        <button type="button" class="secondary" id="live">شروع تماس صوتی</button>
+        <input type="tel" id="phone" placeholder="موبایل برای پیامک (۰۹۱۲…)" inputmode="tel" />
         <input type="text" id="text" placeholder="پیام خود را به فارسی بنویسید…" autocomplete="off" />
         <button type="submit">ارسال</button>
       </form>
+      <div id="transfer" hidden class="transfer-box"></div>
       <p class="hint">
-        نمونه: «علی رضایی» ← «دکتر کریمی» ← «فردا» ← «ساعت ده صبح» ← «بله».
-        برای انتقال به منشی بنویسید: «می‌خواهم با منشی صحبت کنم».
+        این سامانه برای ایران است: Twilio استفاده نمی‌شود. تماس صوتی از میکروفون همین صفحه است
+        (مدل Vosk اگر نصب باشد). پیامک تأیید با کاوه‌نگار ارسال می‌شود.
+        نمونه متنی: «علی رضایی» ← «دکتر کریمی» ← «فردا» ← «ساعت ده صبح» ← «بله».
+        انتقال به منشی: «می‌خواهم با منشی صحبت کنم».
       </p>
     </section>
     <div>
@@ -161,7 +185,13 @@
     const sessionId = "demo-" + Math.random().toString(36).slice(2, 8);
     const logEl = document.getElementById("log");
     const textEl = document.getElementById("text");
+    const phoneEl = document.getElementById("phone");
+    const liveBtn = document.getElementById("live");
     const GREETING = "به سامانه نوبت‌دهی خوش آمدید. نام و نام خانوادگی خود را بفرمایید.";
+    let liveWs = null;
+    let liveCtx = null;
+    let liveStream = null;
+    let healthInfo = {};
 
     function addMsg(role, text, meta) {
       const div = document.createElement("div");
@@ -171,16 +201,36 @@
       logEl.scrollTop = logEl.scrollHeight;
     }
     function escapeHtml(s) {
-      return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+      return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    }
+    function playWavB64(b64) {
+      const audio = new Audio("data:audio/wav;base64," + b64);
+      audio.play().catch(() => {});
+    }
+    function speakFallback(text) {
+      if (!window.speechSynthesis || !text) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "fa-IR";
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }
+    function showTransfer(t) {
+      if (!t) return;
+      const box = document.getElementById("transfer");
+      box.hidden = false;
+      const num = t.receptionist_number || "";
+      box.innerHTML = `<strong>انتقال به منشی انسان</strong><br>${escapeHtml(t.summary || "")}<br>
+        <a href="tel:${escapeHtml(num)}">تماس با منشی: ${escapeHtml(num)}</a>`;
     }
 
     async function health() {
       const h = await fetch("/health").then(r => r.json());
+      healthInfo = h;
       const pills = [
-        ["STT", h.stt.available],
-        ["TTS", h.tts.available],
-        ["Ollama", h.llm.available],
-        ["Twilio", h.twilio],
+        ["گفتار (Vosk)", h.stt && h.stt.available],
+        ["صدا (Piper)", h.tts && h.tts.available],
+        ["Ollama", h.llm && h.llm.available],
+        ["پیامک کاوه‌نگار", h.sms && h.sms.available],
       ];
       document.getElementById("status").innerHTML = pills.map(([n, ok]) =>
         `<span class="pill ${ok ? "ok" : "off"}">${n}: ${ok ? "فعال" : "غیرفعال"}</span>`
@@ -204,14 +254,28 @@
         `</tbody></table>`;
     }
 
+    function applyAssistant(res) {
+      addMsg("agent", res.reply || res.text, "منشی · " + (res.phase || ""));
+      if (res.transfer) showTransfer(res.transfer);
+      loadAppts();
+    }
+
     async function send(text) {
       const res = await fetch("/api/simulate", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ session_id: sessionId, text }),
+        body: JSON.stringify({ session_id: sessionId, text, phone: phoneEl.value.trim() }),
       }).then(r => r.json());
-      addMsg("agent", res.reply, "منشی · " + (res.phase || ""));
-      loadAppts();
+      applyAssistant(res);
+      if (text && res.reply) {
+        if (healthInfo.tts && healthInfo.tts.available) {
+          fetch("/api/tts?text=" + encodeURIComponent(res.reply))
+            .then(r => r.blob())
+            .then(b => { const a = new Audio(URL.createObjectURL(b)); a.play().catch(() => {}); });
+        } else {
+          speakFallback(res.reply);
+        }
+      }
     }
 
     document.getElementById("form").addEventListener("submit", async (e) => {
@@ -224,20 +288,85 @@
     });
 
     document.getElementById("reset").addEventListener("click", async () => {
+      await stopLive();
       logEl.innerHTML = "";
+      document.getElementById("transfer").hidden = true;
       addMsg("agent", GREETING, "منشی · تماس جدید");
       textEl.focus();
       try {
         await fetch("/api/simulate/reset", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({ session_id: sessionId }),
+          body: JSON.stringify({ session_id: sessionId, phone: phoneEl.value.trim() }),
         });
       } catch (err) {
         console.error(err);
       }
     });
     document.getElementById("refresh").addEventListener("click", loadAppts);
+
+    async function stopLive() {
+      if (liveWs) {
+        try { liveWs.send(JSON.stringify({ event: "stop" })); liveWs.close(); } catch (e) {}
+        liveWs = null;
+      }
+      if (liveStream) {
+        liveStream.getTracks().forEach(t => t.stop());
+        liveStream = null;
+      }
+      if (liveCtx) {
+        try { await liveCtx.close(); } catch (e) {}
+        liveCtx = null;
+      }
+      liveBtn.textContent = "شروع تماس صوتی";
+      liveBtn.classList.remove("on");
+    }
+
+    liveBtn.addEventListener("click", async () => {
+      if (liveWs) { await stopLive(); return; }
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/voice/live`);
+      liveWs = ws;
+      ws.binaryType = "arraybuffer";
+      ws.onopen = async () => {
+        liveBtn.textContent = "قطع تماس صوتی";
+        liveBtn.classList.add("on");
+        ws.send(JSON.stringify({ event: "start", session_id: sessionId, phone: phoneEl.value.trim() }));
+        try {
+          liveStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+          liveCtx = new AudioContext({ sampleRate: 16000 });
+          const src = liveCtx.createMediaStreamSource(liveStream);
+          const proc = liveCtx.createScriptProcessor(4096, 1, 1);
+          proc.onaudioprocess = (ev) => {
+            if (!liveWs || liveWs.readyState !== 1) return;
+            const f32 = ev.inputBuffer.getChannelData(0);
+            const pcm = new Int16Array(f32.length);
+            for (let i = 0; i < f32.length; i++) {
+              const s = Math.max(-1, Math.min(1, f32[i]));
+              pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            }
+            liveWs.send(pcm.buffer);
+          };
+          src.connect(proc);
+          proc.connect(liveCtx.destination);
+        } catch (err) {
+          addMsg("agent", "دسترسی به میکروفون داده نشد. می‌توانید متن را تایپ کنید.", "سیستم");
+          await stopLive();
+        }
+      };
+      ws.onmessage = (ev) => {
+        if (typeof ev.data !== "string") return;
+        const msg = JSON.parse(ev.data);
+        if (msg.event === "user") addMsg("user", msg.text, "شما · گفتار");
+        if (msg.event === "assistant") {
+          applyAssistant({ reply: msg.text, phase: msg.phase, transfer: msg.transfer });
+        }
+        if (msg.event === "audio" && msg.wav_b64) playWavB64(msg.wav_b64);
+        if (msg.event === "status" && msg.message) addMsg("agent", msg.message, "سیستم");
+      };
+      ws.onclose = () => { if (liveWs === ws) stopLive(); };
+      ws.onerror = () => addMsg("agent", "ارتباط تماس صوتی قطع شد.", "سیستم");
+    });
 
     (async () => {
       await health();

@@ -33,6 +33,8 @@ class Config:
     twilio_phone_number: str
     public_base_url: str
     receptionist_number: str
+    kavenegar_api_key: str
+    kavenegar_sender: str
 
     vosk_model_path: Path
     piper_model_path: Path
@@ -59,6 +61,10 @@ class Config:
     def twilio_configured(self) -> bool:
         return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_phone_number)
 
+    @property
+    def kavenegar_configured(self) -> bool:
+        return bool(self.kavenegar_api_key)
+
 
 def load_config() -> Config:
     return Config(
@@ -67,6 +73,8 @@ def load_config() -> Config:
         twilio_phone_number=_env("TWILIO_PHONE_NUMBER"),
         public_base_url=_env("PUBLIC_BASE_URL", "http://127.0.0.1:38471").rstrip("/"),
         receptionist_number=_env("RECEPTIONIST_NUMBER", "+989120000000"),
+        kavenegar_api_key=_env("KAVENEGAR_API_KEY"),
+        kavenegar_sender=_env("KAVENEGAR_SENDER"),
         vosk_model_path=_resolve_path(_env("VOSK_MODEL_PATH", "./models/vosk-model-fa")),
         piper_model_path=_resolve_path(
             _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mena-medium.onnx")

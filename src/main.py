@@ -14,11 +14,14 @@ from src.config import ROOT_DIR, config
 from src.llm import llm
 from src.stt import stt
 from src.tts import tts
+from src.handoff import start_warm_transfer
+from src.live_voice import handle_browser_voice
+from src.sip_bridge import sip_turn
+from src.sms import send_booking_sms
 from src.twilio_handler import (
     handle_incoming_call,
     handle_media_stream,
     receptionist_join_twiml,
-    start_warm_transfer,
     twiml_response,
 )
 from src.utils import log
@@ -38,13 +41,13 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 def _startup() -> None:
     db.init_db()
     log.info(
-        "Agent ready host=%s port=%s stt=%s tts=%s ollama=%s twilio=%s",
+        "Agent ready host=%s port=%s stt=%s tts=%s ollama=%s kavenegar=%s",
         config.host,
         config.port,
         stt.available,
         tts.available,
         llm.is_available(),
-        config.twilio_configured,
+        config.kavenegar_configured,
     )
 
 
@@ -60,7 +63,9 @@ def health() -> dict:
         "stt": {"available": stt.available, "path": str(config.vosk_model_path)},
         "tts": {"available": tts.available, "path": str(config.piper_model_path)},
         "llm": {"available": llm.is_available(), "url": config.ollama_url, "model": config.ollama_model},
-        "twilio": config.twilio_configured,
+        "sms": {"provider": "kavenegar", "available": config.kavenegar_configured},
+        "voice": {"browser": True, "stt": stt.available, "tts": tts.available},
+        "receptionist_number": config.receptionist_number,
         "doctors": len(db.list_doctors()),
     }
 
@@ -73,6 +78,12 @@ async def voice_incoming(request: Request) -> Response:
 @app.websocket("/voice/stream")
 async def voice_stream(websocket: WebSocket) -> None:
     await handle_media_stream(websocket)
+
+
+@app.websocket("/voice/live")
+async def voice_live(websocket: WebSocket) -> None:
+    """Microphone session from the clinic web app (usable in Iran)."""
+    await handle_browser_voice(websocket)
 
 
 @app.post("/voice/transfer-status")
@@ -107,7 +118,9 @@ async def api_simulate(request: Request) -> JSONResponse:
     session_id = str(body.get("session_id") or "demo-local")
     text = str(body.get("text") or "")
     if call_manager.get(session_id) is None:
-        call_manager.start_call(session_id, from_number=str(body.get("phone") or "+989120000001"))
+        call_manager.start_call(
+            session_id, from_number=str(body.get("phone") or "")
+        )
         if not text:
             return JSONResponse(
                 {
@@ -119,9 +132,19 @@ async def api_simulate(request: Request) -> JSONResponse:
                     "call_sid": session_id,
                 }
             )
+    phone = str(body.get("phone") or "")
+    if phone:
+        state = call_manager.get(session_id)
+        if state:
+            state.from_number = phone
     result = call_manager.handle_user_text(session_id, text)
+    if result.get("intent") == "book":
+        result["sms"] = send_booking_sms(session_id)
     if result.get("intent") == "transfer":
         result["transfer"] = start_warm_transfer(session_id)
+        extra = (result["transfer"] or {}).get("reply_extra")
+        if extra:
+            result["reply"] = f"{result.get('reply', '')} {extra}".strip()
     return JSONResponse(result)
 
 
@@ -130,8 +153,20 @@ async def api_simulate_reset(request: Request) -> JSONResponse:
     body = await request.json()
     session_id = str(body.get("session_id") or "demo-local")
     call_manager.end_call(session_id)
-    call_manager.start_call(session_id, from_number="+989120000001")
+    call_manager.start_call(session_id, from_number=str(body.get("phone") or ""))
     return JSONResponse({"ok": True, "reply": call_manager.greeting(), "phase": "ask_name"})
+
+
+@app.post("/sip/turn")
+async def sip_turn_endpoint(request: Request) -> JSONResponse:
+    """One dialogue turn for an Iranian Asterisk/SIP PBX."""
+    body = await request.json()
+    result = sip_turn(
+        str(body.get("session_id") or body.get("call_id") or "sip-local"),
+        str(body.get("text") or ""),
+        str(body.get("phone") or ""),
+    )
+    return JSONResponse(result)
 
 
 @app.get("/api/tts")
