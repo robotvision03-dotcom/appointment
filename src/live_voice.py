@@ -29,7 +29,6 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
     """
     await websocket.accept()
     call_sid = ""
-    recognizer = None
     speech_started = False
     silence_ms = 0
     voiced_ms = 0
@@ -59,7 +58,6 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                     if phone:
                         state.from_number = phone
                     state.phase = PHASE_ASK_NAME
-                    recognizer = stt.make_recognizer(sample_rate)
                     greeting = call_manager.greeting()
                     await _send_assistant(websocket, greeting, "ask_name", "continue")
                     await websocket.send_json(
@@ -77,10 +75,9 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                         log.info("Browser voice stop %s", call_sid)
                     break
                 elif event == "text":
-                    # Typed fallback on the same live session
                     text = str(msg.get("text") or "")
                     if call_sid and text:
-                        await _handle_utterance(websocket, call_sid, text)
+                        await _handle_utterance(websocket, call_sid, text, echo_user=False)
 
             elif message.get("bytes"):
                 pcm = message["bytes"]
@@ -88,17 +85,10 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                     continue
                 energy = pcm16_rms(pcm)
                 pcm_buffer.extend(pcm)
+                max_bytes = sample_rate * 2 * 20
+                if len(pcm_buffer) > max_bytes:
+                    del pcm_buffer[: len(pcm_buffer) - sample_rate * 2 * 12]
                 duration_ms = int(1000 * (len(pcm) // 2) / sample_rate) or FRAME_MS_ESTIMATE
-
-                if recognizer is not None:
-                    final, _partial = stt.transcribe_partial(recognizer, pcm)
-                    if final:
-                        pcm_buffer.clear()
-                        speech_started = False
-                        silence_ms = 0
-                        voiced_ms = 0
-                        await _handle_utterance(websocket, call_sid, final)
-                        continue
 
                 if energy >= config.energy_threshold:
                     speech_started = True
@@ -110,13 +100,12 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                         silence_ms >= config.vad_silence_ms
                         and voiced_ms >= config.min_utterance_ms
                     ):
-                        transcript = stt.transcribe(bytes(pcm_buffer), sample_rate)
+                        chunk = bytes(pcm_buffer)
                         pcm_buffer.clear()
                         speech_started = False
                         silence_ms = 0
                         voiced_ms = 0
-                        if recognizer is not None:
-                            recognizer = stt.make_recognizer(sample_rate)
+                        transcript = await asyncio.to_thread(stt.transcribe, chunk, sample_rate)
                         if transcript:
                             await _handle_utterance(websocket, call_sid, transcript)
                         else:
@@ -133,8 +122,11 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
         log.exception("Browser voice error: %s", exc)
 
 
-async def _handle_utterance(websocket: WebSocket, call_sid: str, text: str) -> None:
-    await websocket.send_json({"event": "user", "text": text})
+async def _handle_utterance(
+    websocket: WebSocket, call_sid: str, text: str, echo_user: bool = True
+) -> None:
+    if echo_user:
+        await websocket.send_json({"event": "user", "text": text})
     result = await asyncio.to_thread(call_manager.handle_user_text, call_sid, text)
     if result.get("intent") == "book":
         await asyncio.to_thread(send_booking_sms, call_sid)

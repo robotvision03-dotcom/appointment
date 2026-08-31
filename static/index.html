@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>منشی صوتی نوبت‌دهی</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect rx='12' width='64' height='64' fill='%233dbea5'/></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" rel="stylesheet" />
   <style>
@@ -144,7 +145,7 @@
   <header>
     <div>
       <h1>منشی صوتی نوبت‌دهی پزشکی</h1>
-      <p class="sub">رزرو نوبت از داخل ایران: گفتگوی متنی یا تماس صوتی داخل مرورگر. پیامک با کاوه‌نگار. بدون Twilio.</p>
+      <p class="sub">قابل استفاده در ایران: گفتگوی متنی یا میکروفون همین صفحه. پیامک با کاوه‌نگار.</p>
     </div>
     <div class="pills" id="status"></div>
   </header>
@@ -161,8 +162,8 @@
       </form>
       <div id="transfer" hidden class="transfer-box"></div>
       <p class="hint">
-        این سامانه برای ایران است: Twilio استفاده نمی‌شود. تماس صوتی از میکروفون همین صفحه است
-        (مدل Vosk اگر نصب باشد). پیامک تأیید با کاوه‌نگار ارسال می‌شود.
+        این سامانه برای ایران است: تماس صوتی از میکروفون همین صفحه است
+        (با مدل Vosk روی همین سرور). پیامک تأیید با کاوه‌نگار ارسال می‌شود.
         نمونه متنی: «علی رضایی» ← «دکتر کریمی» ← «فردا» ← «ساعت ده صبح» ← «بله».
         انتقال به منشی: «می‌خواهم با منشی صحبت کنم».
       </p>
@@ -261,6 +262,10 @@
     }
 
     async function send(text) {
+      if (liveWs && liveWs.readyState === 1) {
+        liveWs.send(JSON.stringify({ event: "text", text, phone: phoneEl.value.trim() }));
+        return;
+      }
       const res = await fetch("/api/simulate", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -348,7 +353,10 @@
             liveWs.send(pcm.buffer);
           };
           src.connect(proc);
-          proc.connect(liveCtx.destination);
+          const silent = liveCtx.createGain();
+          silent.gain.value = 0;
+          proc.connect(silent);
+          silent.connect(liveCtx.destination);
         } catch (err) {
           addMsg("agent", "دسترسی به میکروفون داده نشد. می‌توانید متن را تایپ کنید.", "سیستم");
           await stopLive();
