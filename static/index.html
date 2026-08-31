@@ -161,6 +161,7 @@
     const sessionId = "demo-" + Math.random().toString(36).slice(2, 8);
     const logEl = document.getElementById("log");
     const textEl = document.getElementById("text");
+    const GREETING = "به سامانه نوبت‌دهی خوش آمدید. نام و نام خانوادگی خود را بفرمایید.";
 
     function addMsg(role, text, meta) {
       const div = document.createElement("div");
@@ -224,12 +225,17 @@
 
     document.getElementById("reset").addEventListener("click", async () => {
       logEl.innerHTML = "";
-      const res = await fetch("/api/simulate/reset", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ session_id: sessionId }),
-      }).then(r => r.json());
-      addMsg("agent", res.reply, "منشی · تماس جدید");
+      addMsg("agent", GREETING, "منشی · تماس جدید");
+      textEl.focus();
+      try {
+        await fetch("/api/simulate/reset", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+      } catch (err) {
+        console.error(err);
+      }
     });
     document.getElementById("refresh").addEventListener("click", loadAppts);
 
