@@ -82,8 +82,8 @@ def load_config() -> Config:
         piper_config_path=_resolve_path(
             _env("PIPER_CONFIG_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx.json")
         ),
-        ollama_url=_env("OLLAMA_URL", "http://localhost:11434").rstrip("/"),
-        ollama_model=_env("OLLAMA_MODEL", "persianllama:7b"),
+        ollama_url=_env("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/"),
+        ollama_model=_env("OLLAMA_MODEL", "llama3.2:3b"),
         db_path=_resolve_path(_env("DB_PATH", "./appointments.db")),
         host=_env("HOST", "0.0.0.0"),
         port=int(_env("PORT", "38471")),

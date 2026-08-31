@@ -42,13 +42,46 @@ class PersianLLM:
         self.url = (url or config.ollama_url).rstrip("/")
         self.model = model or config.ollama_model
         self.timeout = 25.0
+        self.last_error: str | None = None
+
+    def _client(self, timeout: float | None = None) -> httpx.Client:
+        # trust_env=False: Iranian VPN/proxy env vars must not hijack localhost.
+        return httpx.Client(timeout=timeout or self.timeout, trust_env=False)
+
+    def _candidate_urls(self) -> list[str]:
+        urls = [self.url]
+        for extra in ("http://127.0.0.1:11434", "http://localhost:11434"):
+            if extra not in urls:
+                urls.append(extra)
+        return urls
 
     def is_available(self) -> bool:
+        self.last_error = None
+        last_exc = None
+        for base in self._candidate_urls():
+            try:
+                with self._client(timeout=3.0) as client:
+                    r = client.get(f"{base}/api/tags")
+                if r.status_code == 200:
+                    if base != self.url:
+                        log.info("Ollama reachable at %s (OLLAMA_URL was %s)", base, self.url)
+                        self.url = base
+                    return True
+                last_exc = f"HTTP {r.status_code} from {base}"
+            except Exception as exc:  # noqa: BLE001
+                last_exc = f"{base}: {exc}"
+        self.last_error = last_exc
+        return False
+
+    def list_models(self) -> list[str]:
+        if not self.is_available():
+            return []
         try:
-            r = httpx.get(f"{self.url}/api/tags", timeout=2.0)
-            return r.status_code == 200
+            with self._client(timeout=5.0) as client:
+                data = client.get(f"{self.url}/api/tags").json()
+            return [m.get("name") for m in data.get("models") or [] if m.get("name")]
         except Exception:  # noqa: BLE001
-            return False
+            return []
 
     def generate_response(self, prompt: str, context: list[dict[str, str]] | None = None) -> str:
         """Send a prompt to Ollama and return generated text (empty string on failure)."""
@@ -63,7 +96,7 @@ class PersianLLM:
             "options": {"temperature": 0.3, "num_predict": 256},
         }
         try:
-            with httpx.Client(timeout=self.timeout) as client:
+            with self._client() as client:
                 resp = client.post(f"{self.url}/api/chat", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
