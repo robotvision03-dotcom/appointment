@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>منشی صوتی نوبت‌دهی</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --panel-2: #243044;
+      --ink: #e8eef7;
+      --muted: #93a4bb;
+      --accent: #3dbea5;
+      --accent-2: #f0c36a;
+      --danger: #e07a7a;
+      --line: #314057;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Vazirmatn, Tahoma, sans-serif;
+      background: radial-gradient(1200px 600px at 80% -10%, #1e3a34 0%, transparent 50%),
+                  radial-gradient(900px 500px at -10% 110%, #2a3348 0%, transparent 55%),
+                  var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    header {
+      padding: 1.25rem 1.5rem 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.35rem; font-weight: 700; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
+    .pills { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .pill {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+    .pill.ok { border-color: var(--accent); color: var(--accent); }
+    .pill.off { border-color: var(--danger); color: var(--danger); }
+    main {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 1rem;
+      padding: 1rem 1.5rem 2rem;
+    }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; padding: 1rem; }
+    }
+    .card {
+      background: color-mix(in srgb, var(--panel) 88%, transparent);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 1rem;
+      min-height: 0;
+    }
+    .card h2 { margin: 0 0 0.75rem; font-size: 1rem; }
+    #log {
+      height: min(58vh, 520px);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      padding: 0.25rem;
+    }
+    .msg {
+      max-width: 85%;
+      padding: 0.65rem 0.85rem;
+      border-radius: 14px;
+      line-height: 1.7;
+      font-size: 0.95rem;
+    }
+    .msg.agent { background: var(--panel-2); align-self: flex-start; }
+    .msg.user { background: #1f4a43; align-self: flex-end; }
+    .msg .meta { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.15rem; }
+    form.composer {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    input[type=text] {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 0.7rem 0.85rem;
+      font-family: inherit;
+      font-size: 1rem;
+    }
+    button {
+      font-family: inherit;
+      background: var(--accent);
+      color: #06221c;
+      border: 0;
+      border-radius: 10px;
+      padding: 0.7rem 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: right; padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 500; }
+    .empty { color: var(--muted); padding: 0.75rem 0; }
+    .row-actions { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .hint { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>منشی صوتی نوبت‌دهی پزشکی</h1>
+      <p class="sub">گفتگوی فارسی برای رزرو نوبت. بدون تماس تلفنی هم می‌توانید جریان را اینجا آزمایش کنید.</p>
+    </div>
+    <div class="pills" id="status"></div>
+  </header>
+  <main>
+    <section class="card">
+      <h2>شبیه‌ساز تماس</h2>
+      <div id="log"></div>
+      <form class="composer" id="form">
+        <button type="button" class="secondary" id="reset">تماس جدید</button>
+        <input type="text" id="text" placeholder="پیام خود را به فارسی بنویسید…" autocomplete="off" />
+        <button type="submit">ارسال</button>
+      </form>
+      <p class="hint">
+        نمونه: «علی رضایی» ← «دکتر کریمی» ← «فردا» ← «ساعت ده صبح» ← «بله».
+        برای انتقال به منشی بنویسید: «می‌خواهم با منشی صحبت کنم».
+      </p>
+    </section>
+    <div>
+      <section class="card">
+        <h2>پزشکان</h2>
+        <div id="doctors" class="empty">در حال بارگذاری…</div>
+      </section>
+      <section class="card" style="margin-top:1rem">
+        <div class="row-actions">
+          <h2 style="flex:1;margin:0">نوبت‌ها</h2>
+          <button type="button" class="secondary" id="refresh">بروزرسانی</button>
+        </div>
+        <div id="appts" class="empty">هنوز نوبتی ثبت نشده است.</div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const sessionId = "demo-" + Math.random().toString(36).slice(2, 8);
+    const logEl = document.getElementById("log");
+    const textEl = document.getElementById("text");
+
+    function addMsg(role, text, meta) {
+      const div = document.createElement("div");
+      div.className = "msg " + role;
+      div.innerHTML = `<div class="meta">${meta || (role === "agent" ? "منشی" : "شما")}</div>${escapeHtml(text)}`;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    }
+
+    async function health() {
+      const h = await fetch("/health").then(r => r.json());
+      const pills = [
+        ["STT", h.stt.available],
+        ["TTS", h.tts.available],
+        ["Ollama", h.llm.available],
+        ["Twilio", h.twilio],
+      ];
+      document.getElementById("status").innerHTML = pills.map(([n, ok]) =>
+        `<span class="pill ${ok ? "ok" : "off"}">${n}: ${ok ? "فعال" : "غیرفعال"}</span>`
+      ).join("");
+    }
+
+    async function loadDoctors() {
+      const docs = await fetch("/api/doctors").then(r => r.json());
+      document.getElementById("doctors").innerHTML =
+        `<table><thead><tr><th>نام</th><th>تخصص</th></tr></thead><tbody>` +
+        docs.map(d => `<tr><td>${d.name}</td><td>${d.specialty}</td></tr>`).join("") +
+        `</tbody></table>`;
+    }
+
+    async function loadAppts() {
+      const rows = await fetch("/api/appointments").then(r => r.json());
+      const el = document.getElementById("appts");
+      if (!rows.length) { el.innerHTML = `<div class="empty">هنوز نوبتی ثبت نشده است.</div>`; return; }
+      el.innerHTML = `<table><thead><tr><th>کد</th><th>بیمار</th><th>پزشک</th><th>تاریخ</th><th>ساعت</th></tr></thead><tbody>` +
+        rows.map(a => `<tr><td>${a.id}</td><td>${a.patient_name}</td><td>${a.doctor_name}</td><td>${a.date}</td><td>${a.time}</td></tr>`).join("") +
+        `</tbody></table>`;
+    }
+
+    async function send(text) {
+      const res = await fetch("/api/simulate", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ session_id: sessionId, text }),
+      }).then(r => r.json());
+      addMsg("agent", res.reply, "منشی · " + (res.phase || ""));
+      loadAppts();
+    }
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const t = textEl.value.trim();
+      if (!t) return;
+      addMsg("user", t);
+      textEl.value = "";
+      await send(t);
+    });
+
+    document.getElementById("reset").addEventListener("click", async () => {
+      logEl.innerHTML = "";
+      const res = await fetch("/api/simulate/reset", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ session_id: sessionId }),
+      }).then(r => r.json());
+      addMsg("agent", res.reply, "منشی · تماس جدید");
+    });
+    document.getElementById("refresh").addEventListener("click", loadAppts);
+
+    (async () => {
+      await health();
+      await loadDoctors();
+      await loadAppts();
+      await send("");
+    })();
+  </script>
+</body>
+</html>

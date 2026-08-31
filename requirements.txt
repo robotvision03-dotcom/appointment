@@ -1,0 +1,14 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+python-dotenv==1.1.0
+httpx==0.28.1
+twilio==9.5.2
+vosk==0.3.45
+piper-tts==1.7.0
+numpy>=1.26.0
+pydantic==2.11.3
+websockets==15.0.1
+audioop-lts==0.2.1; python_version>='3.13'
+pytest==8.3.5
+pytest-asyncio==0.26.0
+python-multipart==0.0.20
