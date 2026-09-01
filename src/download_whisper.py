@@ -1,6 +1,7 @@
 """Download vhdm/whisper-large-fa-v1 and convert it to CTranslate2 for faster-whisper.
 
-Usage: python -m src.download_whisper
+Usage: python -m src download-whisper
+       python scripts/download_whisper.py
 """
 
 from __future__ import annotations

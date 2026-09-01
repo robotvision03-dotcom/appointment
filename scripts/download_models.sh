@@ -18,7 +18,7 @@ else
 fi
 
 echo "==> Whisper large Farsi v1 (vhdm/whisper-large-fa-v1, CTranslate2 int8)"
-python -m src.download_whisper
+python -m src download-whisper
 
 echo "Done."
 echo "  STT: models/whisper-large-fa-v1"

@@ -60,9 +60,11 @@ KAVENEGAR_SENDER=1000xxxx
 مدل گفتار را یک‌بار دانلود کنید (حدود ۱ گیگابایت پس از تبدیل int8):
 
 ```bash
-python -m src.download_whisper
-# یا: ./scripts/download_models.sh
-# Windows: powershell -File scripts/download_models.ps1
+python -m src download-whisper
+# Windows:
+py -m src download-whisper
+# or:
+py scripts/download_whisper.py
 ```
 
 ## تست

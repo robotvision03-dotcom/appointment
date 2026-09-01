@@ -19,9 +19,9 @@ if (-not (Test-Path $PiperOnnx)) {
 
 Write-Host "==> Whisper large Farsi v1 (Hugging Face → CTranslate2)"
 if (Get-Command py -ErrorAction SilentlyContinue) {
-    py -m src.download_whisper
+    py -m src download-whisper
 } else {
-    python -m src.download_whisper
+    python -m src download-whisper
 }
 
 Write-Host "Done. Restart: py -m src"
