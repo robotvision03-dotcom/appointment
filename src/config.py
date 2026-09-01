@@ -57,6 +57,7 @@ class Config:
 
     ollama_url: str
     ollama_model: str
+    ollama_enabled: bool
 
     db_path: Path
 
@@ -99,6 +100,7 @@ def load_config() -> Config:
         ),
         ollama_url=_env("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/"),
         ollama_model=_env("OLLAMA_MODEL", "llama3.2:3b"),
+        ollama_enabled=_env("OLLAMA_ENABLED", "1").lower() not in ("0", "false", "no", "off"),
         db_path=_resolve_path(_env("DB_PATH", "./appointments.db")),
         host=_env("HOST", "0.0.0.0"),
         port=int(_env("PORT", "38471")),

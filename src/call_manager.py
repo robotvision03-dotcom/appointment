@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from src import db
+from src.config import config
 from src.llm import llm
 from src.utils import (
     is_no,
@@ -128,7 +129,7 @@ class CallManager:
             return self._begin_transfer(state, text)
 
         llm_result = None
-        if llm.is_available():
+        if config.ollama_enabled and _needs_llm(state, text) and llm.is_available():
             llm_result = llm.interpret_turn(
                 text,
                 state.context,
@@ -389,6 +390,27 @@ def _guess_name(text: str) -> str | None:
     if len(parts) == 1 and len(parts[0]) >= 3:
         return parts[0]
     return None
+
+
+def _needs_llm(state: CallState, text: str) -> bool:
+    """Skip Ollama on clear checklist answers so 7B/14B models do not stall every turn."""
+    if wants_transfer(text):
+        return False
+    if is_yes(text) or is_no(text):
+        return False
+    phase = state.phase
+    info = state.patient_info
+    if (phase in (PHASE_GREETING, PHASE_ASK_NAME) or not info.get("patient_name")) and _guess_name(text):
+        return False
+    if (phase == PHASE_ASK_DOCTOR or not info.get("doctor_id")) and db.find_doctor_by_name(text):
+        return False
+    if (phase == PHASE_ASK_DATE or not info.get("date")) and parse_relative_date(text):
+        return False
+    if (phase == PHASE_ASK_TIME or not info.get("time")) and parse_time(text):
+        return False
+    if phase in (PHASE_BOOKED, PHASE_DONE, PHASE_CONFIRM):
+        return False
+    return len(text.split()) >= 4
 
 
 def _spoken_reply(raw: str | None) -> str | None:
