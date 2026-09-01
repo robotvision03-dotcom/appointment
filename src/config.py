@@ -10,7 +10,22 @@ from dotenv import load_dotenv
 
 # Project root: parent of src/
 ROOT_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT_DIR / ".env")
+
+
+def _load_env_file() -> None:
+    """Notepad on Windows often saves .env as ANSI/cp1256, not UTF-8."""
+    path = ROOT_DIR / ".env"
+    if not path.is_file():
+        return
+    for encoding in ("utf-8-sig", "utf-8", "cp1256", "cp1252", "latin-1"):
+        try:
+            load_dotenv(path, encoding=encoding)
+            return
+        except UnicodeDecodeError:
+            continue
+
+
+_load_env_file()
 
 
 def _env(name: str, default: str = "") -> str:
