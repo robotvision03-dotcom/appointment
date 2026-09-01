@@ -58,7 +58,7 @@ def main() -> int:
             return 1
         pcm, rate = read_wav_pcm(args.wav)
         text = stt.transcribe(pcm, sample_rate=rate)
-        print("TRANSCRIPT:", text or "(empty — is the Vosk Persian model installed?)")
+        print("TRANSCRIPT:", text or "(empty — is Whisper large Farsi v1 installed? python -m src.download_whisper)")
         if text:
             db.init_db()
             sid = "wav-session"

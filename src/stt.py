@@ -1,61 +1,110 @@
-"""Offline Persian speech-to-text via Vosk, with a graceful fallback."""
+"""Persian speech-to-text via Whisper large Farsi v1 (vhdm), local CTranslate2."""
 
 from __future__ import annotations
 
-import json
+import threading
 from pathlib import Path
+
+import numpy as np
 
 from src.config import config
 from src.utils import log
 
 
-class OfflineSTT:
-    """Transcribe 16 kHz mono 16-bit PCM using a local Vosk Persian model."""
+def _looks_like_ct2(path: Path) -> bool:
+    return (path / "model.bin").is_file()
 
-    def __init__(self, model_path: Path | str | None = None) -> None:
-        self.model_path = Path(model_path or config.vosk_model_path)
+
+class WhisperSTT:
+    """Transcribe 16 kHz mono 16-bit PCM with vhdm/whisper-large-fa-v1."""
+
+    def __init__(self) -> None:
+        self.model_id = config.whisper_model_id
+        self.model_path = config.whisper_model_path
+        self.engine = "whisper-large-fa-v1"
         self._model = None
-        self.available = False
-        self._load()
-
-    def _load(self) -> None:
-        resolved = _find_vosk_root(self.model_path)
-        if resolved is None:
-            log.warning(
-                "Vosk model not found at %s — unzip vosk-model-small-fa-0.5.zip "
-                "so that models\\vosk-model-fa\\conf\\model.conf exists. "
-                "On Windows run: powershell -File scripts\\download_models.ps1",
-                self.model_path,
+        self._lock = threading.Lock()
+        self.last_error: str | None = None
+        if _looks_like_ct2(self.model_path):
+            self.last_error = None
+        else:
+            self.last_error = (
+                f"Whisper CT2 model not found at {self.model_path}. "
+                "Run: python -m src.download_whisper"
             )
-            return
-        self.model_path = resolved
-        try:
-            from vosk import Model, SetLogLevel
+            log.warning("%s", self.last_error)
 
-            SetLogLevel(-1)
-            self._model = Model(str(self.model_path))
-            self.available = True
-            log.info("Loaded Vosk model from %s", self.model_path)
-        except Exception as exc:  # noqa: BLE001 — model load must never crash the app
-            log.error("Failed to load Vosk model: %s", exc)
+    @property
+    def loaded(self) -> bool:
+        return self._model is not None
+
+    @property
+    def available(self) -> bool:
+        return _looks_like_ct2(self.model_path) or self._model is not None
+
+    def ensure_loaded(self) -> bool:
+        if self._model is not None:
+            return True
+        with self._lock:
+            if self._model is not None:
+                return True
+            if not _looks_like_ct2(self.model_path):
+                return False
+            try:
+                from faster_whisper import WhisperModel
+
+                device = config.whisper_device
+                compute = config.whisper_compute_type
+                if device == "auto":
+                    try:
+                        import ctranslate2
+
+                        device = "cuda" if ctranslate2.get_cuda_device_count() else "cpu"
+                    except Exception:  # noqa: BLE001
+                        device = "cpu"
+                if device == "cpu" and compute in {"float16", "float32"}:
+                    compute = "int8"
+                log.info(
+                    "Loading Whisper %s from %s device=%s compute=%s",
+                    self.model_id,
+                    self.model_path,
+                    device,
+                    compute,
+                )
+                self._model = WhisperModel(
+                    str(self.model_path),
+                    device=device,
+                    compute_type=compute,
+                )
+                self.last_error = None
+                log.info("Whisper large Farsi v1 ready")
+                return True
+            except Exception as exc:  # noqa: BLE001
+                self.last_error = str(exc)
+                log.error("Failed to load Whisper: %s", exc)
+                self._model = None
+                return False
 
     def transcribe(self, audio_data: bytes, sample_rate: int = 16000) -> str:
-        """Accept raw PCM (16 kHz, mono, 16-bit) and return a Persian transcript."""
         if not audio_data:
             return ""
-        if not self.available or self._model is None:
+        if not self.ensure_loaded():
             log.warning("STT unavailable; skipping transcription of %d bytes", len(audio_data))
             return ""
         try:
-            from vosk import KaldiRecognizer
-
-            rec = KaldiRecognizer(self._model, sample_rate)
-            rec.SetWords(True)
-            chunk = 4000
-            for i in range(0, len(audio_data), chunk):
-                rec.AcceptWaveform(audio_data[i : i + chunk])
-            result = json.loads(rec.FinalResult())
-            text = (result.get("text") or "").strip()
+            audio = _pcm16_to_float32(audio_data, sample_rate)
+            if audio.size < 1600:
+                return ""
+            with self._lock:
+                segments, _info = self._model.transcribe(
+                    audio,
+                    language="fa",
+                    beam_size=1,
+                    vad_filter=False,
+                    condition_on_previous_text=False,
+                    without_timestamps=True,
+                )
+                text = "".join(seg.text for seg in segments).strip()
             log.info("STT transcript: %s", text)
             return text
         except Exception as exc:  # noqa: BLE001
@@ -63,48 +112,24 @@ class OfflineSTT:
             return ""
 
     def transcribe_partial(self, recognizer, audio_chunk: bytes) -> tuple[str | None, str]:
-        """Incremental API for a live stream. Returns (final_text_or_None, partial_text)."""
-        if recognizer is None:
-            return None, ""
-        try:
-            if recognizer.AcceptWaveform(audio_chunk):
-                result = json.loads(recognizer.Result())
-                return (result.get("text") or "").strip(), ""
-            partial = json.loads(recognizer.PartialResult()).get("partial") or ""
-            return None, partial.strip()
-        except Exception as exc:  # noqa: BLE001
-            log.error("Incremental STT failed: %s", exc)
-            return None, ""
+        """Whisper is utterance-based; live path uses VAD then transcribe()."""
+        return None, ""
 
     def make_recognizer(self, sample_rate: int = 16000):
-        if not self.available or self._model is None:
-            return None
-        from vosk import KaldiRecognizer
-
-        rec = KaldiRecognizer(self._model, sample_rate)
-        rec.SetWords(True)
-        return rec
-
-
-def _looks_like_vosk(path: Path) -> bool:
-    return (path / "am" / "final.mdl").exists() or (path / "conf" / "model.conf").exists()
-
-
-def _find_vosk_root(path: Path) -> Path | None:
-    """Accept either the model dir itself or a nested unzip folder (vosk-model-small-fa-0.5)."""
-    if _looks_like_vosk(path):
-        return path
-    if not path.exists() or not path.is_dir():
         return None
-    for child in sorted(path.iterdir()):
-        if child.is_dir() and _looks_like_vosk(child):
-            return child
-        if child.is_dir():
-            for grandchild in sorted(child.iterdir()):
-                if grandchild.is_dir() and _looks_like_vosk(grandchild):
-                    return grandchild
-    return None
 
 
-# Process-wide singleton — Vosk models are heavy.
-stt = OfflineSTT()
+def _pcm16_to_float32(audio_data: bytes, sample_rate: int) -> np.ndarray:
+    pcm = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+    if sample_rate == 16000 or pcm.size == 0:
+        return pcm
+    n = int(round(pcm.size * 16000 / sample_rate))
+    if n <= 0:
+        return pcm
+    x_old = np.linspace(0.0, 1.0, num=pcm.size, endpoint=False)
+    x_new = np.linspace(0.0, 1.0, num=n, endpoint=False)
+    return np.interp(x_new, x_old, pcm).astype(np.float32)
+
+
+# Process-wide singleton — Whisper weights are heavy.
+stt = WhisperSTT()

@@ -67,7 +67,7 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                             "tts": tts.available,
                             "message": None
                             if stt.available
-                            else "مدل تشخیص گفتار نصب نیست. می‌توانید حرف بزنید تا بعداً مدل را اضافه کنید، یا متن را تایپ کنید.",
+                            else "مدل Whisper نصب نیست. python -m src.download_whisper را اجرا کنید، یا متن را تایپ کنید.",
                         }
                     )
                 elif event == "stop":

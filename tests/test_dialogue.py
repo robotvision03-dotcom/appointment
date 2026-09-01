@@ -1,4 +1,4 @@
-"""Unit tests that do not require Vosk, Piper, Ollama, or Twilio."""
+"""Unit tests that do not require Whisper, Piper, Ollama, or Twilio."""
 
 from __future__ import annotations
 

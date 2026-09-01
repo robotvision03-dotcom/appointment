@@ -305,7 +305,7 @@
       const h = await fetch("/health").then(r => r.json());
       healthInfo = h;
       const pills = [
-        ["گفتار (Vosk)", h.stt && h.stt.available],
+        ["گفتار (Whisper FA)", h.stt && h.stt.available],
         ["صدا (Piper)", h.tts && h.tts.available],
         ["Ollama", h.llm && h.llm.available],
         ["پیامک کاوه‌نگار", h.sms && h.sms.available],

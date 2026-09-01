@@ -61,7 +61,14 @@ def index() -> HTMLResponse:
 def health() -> dict:
     return {
         "status": "ok",
-        "stt": {"available": stt.available, "path": str(config.vosk_model_path)},
+        "stt": {
+            "available": stt.available,
+            "engine": stt.engine,
+            "model": stt.model_id,
+            "path": str(stt.model_path),
+            "loaded": stt.loaded,
+            "error": stt.last_error,
+        },
         "tts": {"available": tts.available, "path": str(config.piper_model_path)},
         "llm": {
             "available": llm.is_available(),

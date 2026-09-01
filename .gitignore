@@ -8,6 +8,7 @@ appointments.db
 *.log
 logs/
 models/vosk-model-fa/
+models/whisper-large-fa-v1/
 models/piper-voice-fa/
 *.onnx
 *.onnx.json

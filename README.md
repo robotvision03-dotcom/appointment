@@ -51,13 +51,19 @@ KAVENEGAR_SENDER=1000xxxx
 | نیاز | ابزار |
 | --- | --- |
 | گفتگو / میکروفون | همین وب‌اپ + `/voice/live` |
-| STT | Vosk فارسی، آفلاین |
+| STT | Whisper large Farsi v1 (`vhdm/whisper-large-fa-v1`)، آفلاین روی CPU |
 | TTS منشی | Piper `fa_IR-mana-medium`، آفلاین |
 | تماس با فروشنده | Kavenegar `call/maketts` |
 | پیامک شماره مشتری | Kavenegar SMS |
 | تماس دستی | `tel:` روی صفحه |
 
-مدل‌های گفتار: `./scripts/download_models.sh` یا `scripts/download_models.ps1`.
+مدل گفتار را یک‌بار دانلود کنید (حدود ۱ گیگابایت پس از تبدیل int8):
+
+```bash
+python -m src.download_whisper
+# یا: ./scripts/download_models.sh
+# Windows: powershell -File scripts/download_models.ps1
+```
 
 ## تست
 

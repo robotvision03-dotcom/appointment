@@ -16,7 +16,7 @@ def sip_turn(session_id: str, text: str, phone: str = "") -> dict[str, Any]:
     One dialogue turn for Asterisk AGI / dialplan.
 
     Typical Iran setup: SIP trunk from MCI/Shatel/Respina into Asterisk,
-    SpeechToText via local Vosk (or a local ASR), then POST here, then
+    SpeechToText via local Whisper large Farsi v1 (or a local ASR), then POST here, then
     Playback() the WAV from /api/tts.
     """
     if call_manager.get(session_id) is None:
