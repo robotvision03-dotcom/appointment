@@ -5,6 +5,7 @@ Usage: python -m src.download_whisper
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from src.config import config
@@ -25,16 +26,21 @@ def download_and_convert(force: bool = False) -> Path:
     hf_id = config.whisper_model_id
     log.info("Downloading %s and converting to CTranslate2 int8 → %s", hf_id, dest)
     from ctranslate2.converters import TransformersConverter
+    from transformers import AutoProcessor
 
-    converter = TransformersConverter(
-        hf_id,
-        copy_files=[
-            "tokenizer.json",
-            "preprocessor_config.json",
-            "tokenizer_config.json",
-        ],
-    )
-    converter.convert(str(dest), quantization="int8", force=force or dest.exists())
+    converter = TransformersConverter(hf_id)
+    converter.convert(str(dest), quantization="int8", force=True)
+    # This checkpoint ships vocab.json/merges.txt, not tokenizer.json.
+    processor = AutoProcessor.from_pretrained(hf_id)
+    processor.save_pretrained(dest)
+    from huggingface_hub import hf_hub_download
+
+    for name in ("preprocessor_config.json", "generation_config.json"):
+        try:
+            src = hf_hub_download(hf_id, name)
+            shutil.copy(src, dest / name)
+        except Exception:
+            pass
     if not _ct2_ready(dest):
         raise RuntimeError(f"Conversion finished but {dest / 'model.bin'} is missing")
     log.info("Whisper large Farsi v1 ready at %s", dest)

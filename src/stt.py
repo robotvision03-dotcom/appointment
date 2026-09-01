@@ -95,15 +95,22 @@ class WhisperSTT:
             audio = _pcm16_to_float32(audio_data, sample_rate)
             if audio.size < 1600:
                 return ""
+            rms = float(np.sqrt(np.mean(np.square(audio))))
+            if rms < 0.012:
+                return ""
             with self._lock:
-                segments, _info = self._model.transcribe(
+                segments, info = self._model.transcribe(
                     audio,
                     language="fa",
                     beam_size=1,
                     vad_filter=False,
                     condition_on_previous_text=False,
                     without_timestamps=True,
+                    no_speech_threshold=0.6,
+                    compression_ratio_threshold=2.4,
                 )
+                if getattr(info, "no_speech_prob", 0) > 0.7:
+                    return ""
                 text = "".join(seg.text for seg in segments).strip()
             log.info("STT transcript: %s", text)
             return text
