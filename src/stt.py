@@ -39,26 +39,6 @@ class OfflineSTT:
         except Exception as exc:  # noqa: BLE001 — model load must never crash the app
             log.error("Failed to load Vosk model: %s", exc)
 
-
-def _looks_like_vosk(path: Path) -> bool:
-    return (path / "am" / "final.mdl").exists() or (path / "conf" / "model.conf").exists()
-
-
-def _find_vosk_root(path: Path) -> Path | None:
-    """Accept either the model dir itself or a nested unzip folder (vosk-model-small-fa-0.5)."""
-    if _looks_like_vosk(path):
-        return path
-    if not path.exists() or not path.is_dir():
-        return None
-    for child in sorted(path.iterdir()):
-        if child.is_dir() and _looks_like_vosk(child):
-            return child
-        if child.is_dir():
-            for grandchild in sorted(child.iterdir()):
-                if grandchild.is_dir() and _looks_like_vosk(grandchild):
-                    return grandchild
-    return None
-
     def transcribe(self, audio_data: bytes, sample_rate: int = 16000) -> str:
         """Accept raw PCM (16 kHz, mono, 16-bit) and return a Persian transcript."""
         if not audio_data:
@@ -71,7 +51,6 @@ def _find_vosk_root(path: Path) -> Path | None:
 
             rec = KaldiRecognizer(self._model, sample_rate)
             rec.SetWords(True)
-            # Feed in chunks so Vosk can run its pipeline
             chunk = 4000
             for i in range(0, len(audio_data), chunk):
                 rec.AcceptWaveform(audio_data[i : i + chunk])
@@ -84,11 +63,7 @@ def _find_vosk_root(path: Path) -> Path | None:
             return ""
 
     def transcribe_partial(self, recognizer, audio_chunk: bytes) -> tuple[str | None, str]:
-        """
-        Incremental API for a live stream.
-
-        Returns (final_text_or_None, partial_text).
-        """
+        """Incremental API for a live stream. Returns (final_text_or_None, partial_text)."""
         if recognizer is None:
             return None, ""
         try:
@@ -109,6 +84,26 @@ def _find_vosk_root(path: Path) -> Path | None:
         rec = KaldiRecognizer(self._model, sample_rate)
         rec.SetWords(True)
         return rec
+
+
+def _looks_like_vosk(path: Path) -> bool:
+    return (path / "am" / "final.mdl").exists() or (path / "conf" / "model.conf").exists()
+
+
+def _find_vosk_root(path: Path) -> Path | None:
+    """Accept either the model dir itself or a nested unzip folder (vosk-model-small-fa-0.5)."""
+    if _looks_like_vosk(path):
+        return path
+    if not path.exists() or not path.is_dir():
+        return None
+    for child in sorted(path.iterdir()):
+        if child.is_dir() and _looks_like_vosk(child):
+            return child
+        if child.is_dir():
+            for grandchild in sorted(child.iterdir()):
+                if grandchild.is_dir() and _looks_like_vosk(grandchild):
+                    return grandchild
+    return None
 
 
 # Process-wide singleton — Vosk models are heavy.
