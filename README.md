@@ -1,90 +1,66 @@
-# Persian AI Voice Agent — usable in Iran
+# اتصال مشتری به سرویس‌دهنده (ایران)
 
-منشی نوبت‌دهی پزشکی به زبان فارسی. **Twilio در ایران کار نمی‌کند** و دیگر مسیر اصلی نیست.
+منشی صوتی فارسی که مشتری را به فروشنده وصل می‌کند. **Twilio در ایران کار نمی‌کند.**
 
-مسیرهایی که داخل ایران کار می‌کنند:
+جریان اصلی:
 
-1. **وب (پیشنهادی)** — گفتگوی متنی یا تماس صوتی با میکروفون مرورگر روی همین سرور.
-2. **پیامک کاوه‌نگار** — تأیید نوبت به موبایل ایرانی.
-3. **سانترال ایرانی (اختیاری)** — ترانک SIP محلی + Asterisk که هر نوبت گفتار را به `POST /sip/turn` می‌فرستد.
+1. منشی می‌پرسد: **وقت بخیر چه سرویسی را نیاز دارید؟**
+2. مشتری سرویس را می‌گوید (آرایشگر، مکانیک، اورژانس، پزشک، لوله‌کش، برقکار، …).
+3. فهرست سرویس‌دهندگان همان دسته نمایش داده می‌شود.
+4. مشتری یکی را انتخاب می‌کند.
+5. نرم‌افزار **همان لحظه با سرویس‌دهنده تماس TTS کاوه‌نگار** می‌گیرد.
+6. اگر تماس برقرار نشود (یا کلید کاوه‌نگار نباشد)، **پیامکی شامل شماره مشتری** برای سرویس‌دهنده می‌رود. روی صفحه هم لینک `tel:` برای تماس دستی هست.
 
-گفتار و صدا **آفلاین** هستند (Vosk + Piper روی همان ماشین). به سرویس ابری خارجی وابسته نیستند.
+نوبت پزشکی اختیاری است و از فرم جداگانه ثبت می‌شود.
 
-## Quick start
+## اجرا
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env             # Linux/macOS: cp .env.example .env
+cp .env.example .env               # Windows: copy .env.example .env
 python -m src
 ```
 
-Open **http://127.0.0.1:38471**
+باز کنید: **http://127.0.0.1:38471**
 
-Type a booking:
+گفتگو:
 
-1. علی رضایی  
-2. دکتر کریمی  
-3. فردا  
-4. ساعت ده صبح  
-5. بله  
+1. مکانیک  
+2. اول  
+3. ۰۹۱۲۱۲۳۴۵۶۷  
 
-Or click **شروع تماس صوتی** (microphone). Without the Vosk model, type instead — Google speech APIs are often blocked in Iran.
+یا از سمت راست سرویس و سرویس‌دهنده را کلیک کنید و **تماس با سرویس‌دهنده**.
 
-Enter a mobile (`0912…`) to receive an SMS after booking if Kavenegar is configured.
+## کاوه‌نگار (تماس + پیامک)
 
-## Iran stack
-
-| Need | Tool | Why |
-| --- | --- | --- |
-| Chat / voice in clinic | This web app + WebSocket `/voice/live` | No foreign CPaaS |
-| STT | Vosk Persian, local files | Offline |
-| TTS | Piper `fa_IR-mena-medium`, local | Offline |
-| SMS | [Kavenegar](https://kavenegar.com) | Iranian SMS gateway |
-| Human receptionist | `tel:` click-to-call `RECEPTIONIST_NUMBER` | No Twilio conference |
-| Landline PSTN | Local SIP trunk → Asterisk → `POST /sip/turn` | MCI / Shatel / Respina etc. |
-
-## Kavenegar SMS
-
-1. Sign up at https://panel.kavenegar.com  
-2. Put the API key in `.env`:
+در `.env`:
 
 ```env
 KAVENEGAR_API_KEY=your-key
 KAVENEGAR_SENDER=1000xxxx
-RECEPTIONIST_NUMBER=09121234567
 ```
 
-Until the key is set, SMS is logged only (dry-run) and booking still succeeds.
+بدون کلید، تماس و پیامک فقط در لاگ ثبت می‌شوند (dry-run) و لینک تماس روی صفحه می‌ماند.
 
-## Microphone voice
+شماره‌های اضطراری مثل **۱۱۵** با کاوه‌نگار گرفته نمی‌شوند؛ لینک تماس مستقیم نشان داده می‌شود.
 
-```bash
-./scripts/download_models.sh
-```
+## ایران
 
-Place Vosk under `models/vosk-model-fa` and Piper under `models/piper-voice-fa`. Then **شروع تماس صوتی** streams 16 kHz PCM to `/voice/live`.
+| نیاز | ابزار |
+| --- | --- |
+| گفتگو / میکروفون | همین وب‌اپ + `/voice/live` |
+| STT | Vosk فارسی، آفلاین |
+| TTS منشی | Piper `fa_IR-mana-medium`، آفلاین |
+| تماس با فروشنده | Kavenegar `call/maketts` |
+| پیامک شماره مشتری | Kavenegar SMS |
+| تماس دستی | `tel:` روی صفحه |
 
-## Iranian SIP / Asterisk (optional landline)
+مدل‌های گفتار: `./scripts/download_models.sh` یا `scripts/download_models.ps1`.
 
-Point an Iranian SIP trunk at Asterisk. After local ASR (or Vosk on the PBX), POST each utterance:
-
-```bash
-curl -s http://127.0.0.1:38471/sip/turn \
-  -H 'Content-Type: application/json' \
-  -d '{"session_id":"SIP-CALL-1","phone":"09121234567","text":"علی رضایی"}'
-```
-
-Play the reply with `GET /api/tts?text=...` (WAV). Example dialplan: `scripts/asterisk_dialplan.conf`.
-
-## Environment
-
-See `.env.example`. Twilio variables are unused for the Iran path.
-
-## Tests
+## تست
 
 ```bash
 pytest tests/test_dialogue.py -q
-python tests/test_ai_local.py
 ```

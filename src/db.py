@@ -99,6 +99,32 @@ def init_db(db_path: Path | None = None) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_appt_doctor_date
                 ON appointments(doctor_id, date, time);
+
+            CREATE TABLE IF NOT EXISTS services (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                keywords TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS providers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                service_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                area TEXT,
+                FOREIGN KEY (service_id) REFERENCES services(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS service_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_name TEXT,
+                customer_phone TEXT NOT NULL,
+                provider_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                call_status TEXT,
+                sms_status TEXT,
+                FOREIGN KEY (provider_id) REFERENCES providers(id)
+            );
             """
         )
         count = conn.execute("SELECT COUNT(*) AS c FROM doctors").fetchone()["c"]
@@ -109,6 +135,7 @@ def init_db(db_path: Path | None = None) -> None:
                     (doc["name"], doc["specialty"], json.dumps(doc["available_days"], ensure_ascii=False)),
                 )
             log.info("Seeded %d doctors", len(SEED_DOCTORS))
+        _seed_services(conn)
 
 
 def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -269,3 +296,192 @@ def get_appointment(appointment_id: int, db_path: Path | None = None) -> dict[st
             (appointment_id,),
         ).fetchone()
     return dict(row) if row else None
+
+
+SEED_SERVICES = [
+    {
+        "name": "آرایشگر",
+        "keywords": "آرایش آرایشگر پیرایش سلمانی مو کوتاهی",
+        "providers": [
+            ("سالن گلبرگ", "09121111111", "ونک"),
+            ("پیرایش نو", "09122222222", "انقلاب"),
+        ],
+    },
+    {
+        "name": "مکانیک",
+        "keywords": "مکانیک ماشین خودرو تعمیر باتری پنچری",
+        "providers": [
+            ("تعمیرگاه آزادی", "09123333333", "آزادی"),
+            ("امداد خودرو پارس", "09124444444", "تهرانپارس"),
+        ],
+    },
+    {
+        "name": "اورژانس",
+        "keywords": "اورژانس آمبولانس تصادف اورژانسی ۱۱۵ 115",
+        "providers": [
+            ("اورژانس ۱۱۵", "115", "سراسر شهر"),
+            ("درمانگاه شبانه‌روزی نور", "09125555555", "شریعتی"),
+        ],
+    },
+    {
+        "name": "پزشک",
+        "keywords": "پزشک دکتر مطب ویزیت بیمارستان نوبت",
+        "providers": [
+            ("دکتر کریمی داخلی", "09126666666", "مطهری"),
+            ("دکتر نوری اطفال", "09127777777", "نیاوران"),
+            ("دکتر احمدی قلب", "09128888888", "جردن"),
+        ],
+    },
+    {
+        "name": "لوله‌کش",
+        "keywords": "لوله لوله‌کش چکه فاضلاب سیفون",
+        "providers": [
+            ("تأسیسات رضایی", "09129999991", "پونک"),
+        ],
+    },
+    {
+        "name": "برقکار",
+        "keywords": "برق برقکار سیم‌کشی فیوز روشنایی",
+        "providers": [
+            ("برق ساختمان کاظمی", "09129999992", "سعادت‌آباد"),
+        ],
+    },
+]
+
+
+def _seed_services(conn: sqlite3.Connection) -> None:
+    if conn.execute("SELECT COUNT(*) AS c FROM services").fetchone()["c"]:
+        return
+    for svc in SEED_SERVICES:
+        cur = conn.execute(
+            "INSERT INTO services (name, keywords) VALUES (?, ?)",
+            (svc["name"], svc["keywords"]),
+        )
+        sid = int(cur.lastrowid)
+        for name, phone, area in svc["providers"]:
+            conn.execute(
+                "INSERT INTO providers (service_id, name, phone, area) VALUES (?, ?, ?, ?)",
+                (sid, name, phone, area),
+            )
+    log.info("Seeded %d service categories", len(SEED_SERVICES))
+
+
+def list_services(db_path: Path | None = None) -> list[dict[str, Any]]:
+    with get_conn(db_path) as conn:
+        rows = conn.execute("SELECT id, name, keywords FROM services ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+
+def find_service(text: str, db_path: Path | None = None) -> dict[str, Any] | None:
+    t = (text or "").replace("ي", "ی")
+    for svc in list_services(db_path):
+        if svc["name"] in t:
+            return svc
+        for kw in (svc.get("keywords") or "").split():
+            if kw and kw in t:
+                return svc
+    return None
+
+
+def list_providers(service_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
+    with get_conn(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT p.id, p.service_id, p.name, p.phone, p.area, s.name AS service_name
+            FROM providers p JOIN services s ON s.id = p.service_id
+            WHERE p.service_id = ? ORDER BY p.id
+            """,
+            (service_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_provider(provider_id: int, db_path: Path | None = None) -> dict[str, Any] | None:
+    with get_conn(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT p.id, p.service_id, p.name, p.phone, p.area, s.name AS service_name
+            FROM providers p JOIN services s ON s.id = p.service_id
+            WHERE p.id = ?
+            """,
+            (provider_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+_ORDINALS = {
+    "اول": 1,
+    "یکم": 1,
+    "اولی": 1,
+    "دوم": 2,
+    "دومی": 2,
+    "سوم": 3,
+    "سومی": 3,
+    "چهارم": 4,
+    "پنجم": 5,
+    "ششم": 6,
+}
+
+
+def find_provider(text: str, service_id: int, db_path: Path | None = None) -> dict[str, Any] | None:
+    import re
+
+    t = (text or "").replace("ي", "ی")
+    providers = list_providers(service_id, db_path)
+    numbered = None
+    for word, idx in _ORDINALS.items():
+        if word in t and 1 <= idx <= len(providers):
+            numbered = providers[idx - 1]
+            break
+    m = re.search(r"(\d+)", t)
+    if numbered is None and m:
+        idx = int(m.group(1))
+        if 1 <= idx <= len(providers):
+            numbered = providers[idx - 1]
+    for p in providers:
+        if p["name"] in t:
+            return p
+        bits = [part for part in p["name"].split() if len(part) > 2 and part not in {"دکتر"}]
+        if bits and all(part in t for part in bits):
+            return p
+        if any(part in t for part in bits if len(part) >= 4):
+            return p
+    return numbered
+
+
+def save_service_request(
+    customer_name: str,
+    customer_phone: str,
+    provider_id: int,
+    call_status: str,
+    sms_status: str,
+    db_path: Path | None = None,
+) -> int:
+    created = datetime.now().isoformat(timespec="seconds")
+    with get_conn(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO service_requests
+                (customer_name, customer_phone, provider_id, created_at, call_status, sms_status)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (customer_name, customer_phone, provider_id, created, call_status, sms_status),
+        )
+        return int(cur.lastrowid)
+
+
+def list_service_requests(db_path: Path | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    with get_conn(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT r.id, r.customer_name, r.customer_phone, r.created_at,
+                   r.call_status, r.sms_status, p.name AS provider_name, p.phone AS provider_phone,
+                   s.name AS service_name
+            FROM service_requests r
+            JOIN providers p ON p.id = r.provider_id
+            JOIN services s ON s.id = p.service_id
+            ORDER BY r.id DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]

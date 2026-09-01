@@ -23,7 +23,7 @@ def sip_turn(session_id: str, text: str, phone: str = "") -> dict[str, Any]:
         call_manager.start_call(session_id, from_number=phone)
         if not text:
             reply = call_manager.greeting()
-            return {"reply": reply, "phase": "ask_name", "intent": "continue", "call_sid": session_id}
+            return {"reply": reply, "phase": "ask_service", "intent": "continue", "call_sid": session_id}
     result = call_manager.handle_user_text(session_id, text)
     if result.get("intent") == "book":
         send_booking_sms(session_id)

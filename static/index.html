@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>منشی صوتی نوبت‌دهی</title>
+  <title>اتصال مشتری به سرویس‌دهنده</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect rx='12' width='64' height='64' fill='%233dbea5'/></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -149,15 +149,27 @@
       font-family: inherit;
       font-size: 0.95rem;
     }
-    .book-form .err { color: var(--danger); font-size: 0.85rem; margin-top: 0.4rem; }
-    .book-form .ok { color: var(--accent); font-size: 0.85rem; margin-top: 0.4rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.4rem 0 0.8rem; }
+    .chip, .provider {
+      font-family: inherit;
+      background: var(--bg);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.45rem 0.7rem;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .chip.sel, .provider.sel { border-color: var(--accent); color: var(--accent); }
+    .provider { width: 100%; text-align: right; }
+    .provider small { color: var(--muted); display: block; font-weight: 400; }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1>منشی صوتی نوبت‌دهی پزشکی</h1>
-      <p class="sub">شما نوبت را خودتان ثبت می‌کنید. گفتگو فقط در صورت تمایل است و کوتاه می‌ماند.</p>
+      <h1>اتصال مشتری به سرویس‌دهنده</h1>
+      <p class="sub">وقت بخیر چه سرویسی را نیاز دارید؟ آرایشگر، مکانیک، اورژانس، پزشک و … را بگویید؛ بعد سرویس‌دهنده را انتخاب کنید تا همان لحظه با او تماس گرفته شود.</p>
     </div>
     <div class="pills" id="status"></div>
   </header>
@@ -173,11 +185,31 @@
         <button type="submit">ارسال</button>
       </form>
       <div id="transfer" hidden class="transfer-box"></div>
-      <p class="hint">گفتگو اختیاری است. برای ثبت بدون حرف زدن از فرم سمت چپ استفاده کنید. اگر حرف می‌زنید: نام، پزشک، روز، ساعت، بله.</p>
+      <p class="hint">مثال: «مکانیک» سپس «اول» سپس شماره موبایل‌تان. اگر کاوه‌نگار فعال باشد با فروشنده تماس و در صورت عدم پاسخ پیامک با شماره شما فرستاده می‌شود.</p>
     </section>
     <div>
       <section class="card">
-        <h2>ثبت نوبت توسط بیمار</h2>
+        <h2>انتخاب سرویس</h2>
+        <div class="chips" id="services"></div>
+        <div id="providers" class="empty">ابتدا نوع سرویس را انتخاب کنید.</div>
+        <form class="book-form" id="connect-form">
+          <label>نام شما (اختیاری)</label>
+          <input type="text" id="cf-name" placeholder="علی رضایی" />
+          <label>موبایل شما</label>
+          <input type="tel" id="cf-phone" required placeholder="0912…" />
+          <button type="submit" style="margin-top:0.85rem;width:100%">تماس با سرویس‌دهنده</button>
+          <div id="cf-msg"></div>
+        </form>
+      </section>
+      <section class="card" style="margin-top:1rem">
+        <div class="row-actions">
+          <h2 style="flex:1;margin:0">درخواست‌ها</h2>
+          <button type="button" class="secondary" id="refresh-req">بروزرسانی</button>
+        </div>
+        <div id="requests" class="empty">هنوز درخواستی نیست.</div>
+      </section>
+      <section class="card" style="margin-top:1rem">
+        <h2>ثبت نوبت پزشکی (اختیاری)</h2>
         <form class="book-form" id="book-form">
           <label>نام و نام خانوادگی</label>
           <input type="text" id="bf-name" required placeholder="علی رضایی" />
@@ -214,11 +246,13 @@
     const textEl = document.getElementById("text");
     const phoneEl = document.getElementById("phone");
     const liveBtn = document.getElementById("live");
-    const GREETING = "سلام. نام کامل‌تان چیست؟";
+    const GREETING = "وقت بخیر چه سرویسی را نیاز دارید؟";
     let liveWs = null;
     let liveCtx = null;
     let liveStream = null;
     let healthInfo = {};
+    let selectedServiceId = null;
+    let selectedProviderId = null;
 
     function addMsg(role, text, meta) {
       const div = document.createElement("div");
@@ -241,6 +275,22 @@
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
     }
+    function showConnect(c) {
+      if (!c) return;
+      const box = document.getElementById("transfer");
+      box.hidden = false;
+      const p = c.provider || {};
+      const telP = c.tel_provider || ("tel:" + (p.phone || ""));
+      const telC = c.tel_customer || "";
+      const callOk = c.call && c.call.ok;
+      const smsOk = c.sms && c.sms.ok;
+      const dry = (c.call && c.call.dry_run) || (c.sms && c.sms.dry_run);
+      box.innerHTML = `<strong>اتصال به ${escapeHtml(p.name || "سرویس‌دهنده")}</strong><br>
+        تماس خودکار: ${callOk ? "ارسال شد" : (dry ? "آزمایشی — کلید کاوه‌نگار نیست" : "ناموفق")}
+        · پیامک شماره مشتری: ${smsOk ? "ارسال شد" : (dry ? "آزمایشی" : "ناموفق")}<br>
+        <a href="${escapeHtml(telP)}">تماس با سرویس‌دهنده: ${escapeHtml(p.phone || "")}</a>
+        ${telC ? `<br><a href="${escapeHtml(telC)}">تماس با مشتری</a>` : ""}`;
+    }
     function showTransfer(t) {
       if (!t) return;
       const box = document.getElementById("transfer");
@@ -248,6 +298,7 @@
       const num = t.receptionist_number || "";
       box.innerHTML = `<strong>انتقال به منشی انسان</strong><br>${escapeHtml(t.summary || "")}<br>
         <a href="tel:${escapeHtml(num)}">تماس با منشی: ${escapeHtml(num)}</a>`;
+    }
     }
 
     async function health() {
@@ -262,6 +313,52 @@
       document.getElementById("status").innerHTML = pills.map(([n, ok]) =>
         `<span class="pill ${ok ? "ok" : "off"}" title="${n === "Ollama" && h.llm && h.llm.error ? escapeHtml(h.llm.error) : ""}">${n}: ${ok ? "فعال" : "غیرفعال"}</span>`
       ).join("");
+    }
+
+    async function loadServices() {
+      const list = await fetch("/api/services").then(r => r.json());
+      const el = document.getElementById("services");
+      el.innerHTML = list.map(s =>
+        `<button type="button" class="chip" data-id="${s.id}">${s.name}</button>`
+      ).join("");
+      el.querySelectorAll(".chip").forEach(btn => {
+        btn.addEventListener("click", () => selectService(Number(btn.dataset.id)));
+      });
+    }
+
+    async function selectService(id) {
+      selectedServiceId = id;
+      selectedProviderId = null;
+      document.querySelectorAll("#services .chip").forEach(b => {
+        b.classList.toggle("sel", Number(b.dataset.id) === id);
+      });
+      const rows = await fetch("/api/providers?service_id=" + id).then(r => r.json());
+      const el = document.getElementById("providers");
+      if (!rows.length) {
+        el.innerHTML = `<div class="empty">سرویس‌دهنده‌ای نیست.</div>`;
+        return;
+      }
+      el.innerHTML = rows.map(p =>
+        `<button type="button" class="provider" data-id="${p.id}">
+           ${p.name}<small>${p.area || ""} · ${p.phone}</small>
+         </button>`
+      ).join("");
+      el.querySelectorAll(".provider").forEach(btn => {
+        btn.addEventListener("click", () => {
+          selectedProviderId = Number(btn.dataset.id);
+          el.querySelectorAll(".provider").forEach(x => x.classList.remove("sel"));
+          btn.classList.add("sel");
+        });
+      });
+    }
+
+    async function loadRequests() {
+      const rows = await fetch("/api/requests").then(r => r.json());
+      const el = document.getElementById("requests");
+      if (!rows.length) { el.innerHTML = `<div class="empty">هنوز درخواستی نیست.</div>`; return; }
+      el.innerHTML = `<table><thead><tr><th>سرویس</th><th>فروشنده</th><th>مشتری</th><th>تماس</th></tr></thead><tbody>` +
+        rows.map(r => `<tr><td>${r.service_name}</td><td>${r.provider_name}</td><td>${r.customer_phone}</td><td>${r.call_status}</td></tr>`).join("") +
+        `</tbody></table>`;
     }
 
     async function loadDoctors() {
@@ -302,7 +399,9 @@
     function applyAssistant(res) {
       addMsg("agent", res.reply || res.text, "منشی · " + (res.phase || ""));
       if (res.transfer) showTransfer(res.transfer);
+      if (res.connect) showConnect(res.connect);
       loadAppts();
+      loadRequests();
     }
 
     async function send(text) {
@@ -344,6 +443,37 @@
       }
     });
     document.getElementById("refresh").addEventListener("click", loadAppts);
+    document.getElementById("refresh-req").addEventListener("click", loadRequests);
+    document.getElementById("connect-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("cf-msg");
+      msg.className = "";
+      if (!selectedProviderId) {
+        msg.className = "err";
+        msg.textContent = "ابتدا سرویس و سرویس‌دهنده را انتخاب کنید.";
+        return;
+      }
+      msg.textContent = "در حال تماس…";
+      const res = await fetch("/api/connect", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          provider_id: selectedProviderId,
+          customer_name: document.getElementById("cf-name").value.trim(),
+          customer_phone: document.getElementById("cf-phone").value.trim(),
+        }),
+      }).then(r => r.json());
+      if (res.ok) {
+        msg.className = "ok";
+        const p = res.provider || {};
+        msg.textContent = `درخواست ثبت شد. ${p.name} — تماس ${res.call && res.call.ok ? "ارسال شد" : "آزمایشی/ناموفق"}، پیامک ${res.sms && res.sms.ok ? "ارسال شد" : "آزمایشی/ناموفق"}`;
+        showConnect(res);
+        loadRequests();
+      } else {
+        msg.className = "err";
+        msg.textContent = res.error || "اتصال انجام نشد.";
+      }
+    });
     document.getElementById("bf-doctor").addEventListener("change", refreshSlots);
     document.getElementById("bf-date").addEventListener("change", refreshSlots);
     const d0 = new Date();
@@ -446,8 +576,10 @@
 
     (async () => {
       await health();
+      await loadServices();
       await loadDoctors();
       await loadAppts();
+      await loadRequests();
       await send("");
     })();
   </script>

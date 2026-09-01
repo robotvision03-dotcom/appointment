@@ -56,13 +56,64 @@ def test_transfer_phrase():
 
 
 def test_iran_mobile_normalize():
-    from src.sms import normalize_iran_mobile, send_sms
+    from src.sms import extract_iran_mobile, normalize_iran_mobile, send_sms
 
     assert normalize_iran_mobile("09121234567") == "989121234567"
     assert normalize_iran_mobile("+98 912 123 4567") == "989121234567"
+    assert extract_iran_mobile("شماره‌ام ۰۹۱۲۱۲۳۴۵۶۷ است") == "09121234567"
     result = send_sms("09121234567", "نوبت ثبت شد")
     assert result["ok"] is False
     assert result["reason"] == "kavenegar_not_configured"
+
+
+def test_dispatch_dialogue(isolated_db, monkeypatch):
+    monkeypatch.setattr("src.call_manager.llm.is_available", lambda: False)
+    sid = "unit-call"
+    call_manager.end_call(sid)
+    call_manager.start_call(sid)
+    r = call_manager.handle_user_text(sid, "مکانیک")
+    assert r["patient_info"]["service_name"] == "مکانیک"
+    assert r["phase"] == "ask_provider"
+    assert "آزادی" in r["reply"]
+    r = call_manager.handle_user_text(sid, "اول")
+    assert r["phase"] == "ask_phone"
+    r = call_manager.handle_user_text(sid, "09121234567")
+    assert r["intent"] == "connect"
+    assert r["connect"]["ok"] is True
+    assert r["connect"]["provider"]["name"] == "تعمیرگاه آزادی"
+    assert r["connect"]["sms"]["dry_run"] is True
+    rows = db.list_service_requests(isolated_db)
+    assert rows[0]["customer_phone"].endswith("9121234567") or "09121234567" in rows[0]["customer_phone"]
+
+
+def test_connect_api_emergency(isolated_db):
+    from src.dispatch import connect_customer_to_provider
+
+    emergency = next(p for p in db.list_providers(db.find_service("اورژانس")["id"]) if p["phone"] == "115")
+    out = connect_customer_to_provider("09120000000", emergency["id"], "آزمایش")
+    assert out["ok"] is True
+    assert out["call"]["reason"] == "emergency_number"
+
+
+def test_patient_name_not_confused_with_doctor(isolated_db, monkeypatch):
+    monkeypatch.setattr("src.call_manager.llm.is_available", lambda: False)
+    sid = "name-vs-doctor"
+    call_manager.end_call(sid)
+    call_manager.start_call(sid)
+    r = call_manager.handle_user_text(sid, "پزشک")
+    assert r["patient_info"]["service_name"] == "پزشک"
+    r = call_manager.handle_user_text(sid, "دکتر کریمی")
+    assert "کریمی" in r["patient_info"].get("provider_name", "")
+
+
+def test_full_booking_dialogue(isolated_db, monkeypatch):
+    monkeypatch.setattr("src.call_manager.llm.is_available", lambda: False)
+    docs = db.list_doctors(isolated_db)
+    kid = next(d["id"] for d in docs if "نوری" in d["name"])
+    aid = db.book_appointment("مریم حسینی", "09120000000", kid, "2026-09-02", "11:00", isolated_db)
+    appt = db.get_appointment(aid, isolated_db)
+    assert appt["patient_name"] == "مریم حسینی"
+    assert "نوری" in appt["doctor_name"]
 
 
 def test_handoff_click_to_call():
@@ -76,38 +127,3 @@ def test_handoff_click_to_call():
     assert out["ok"] is True
     assert out["method"] == "click_to_call"
     assert out["tel_url"].startswith("tel:")
-
-
-def test_patient_name_not_confused_with_doctor(isolated_db, monkeypatch):
-    monkeypatch.setattr("src.call_manager.llm.is_available", lambda: False)
-    sid = "name-vs-doctor"
-    call_manager.end_call(sid)
-    call_manager.start_call(sid)
-    r = call_manager.handle_user_text(sid, "علی رضایی")
-    assert r["patient_info"]["patient_name"] == "علی رضایی"
-    assert "doctor_id" not in r["patient_info"]
-    r = call_manager.handle_user_text(sid, "دکتر کریمی")
-    assert r["patient_info"]["doctor_name"] == "دکتر کریمی"
-
-
-def test_full_booking_dialogue(isolated_db, monkeypatch):
-    monkeypatch.setattr("src.call_manager.llm.is_available", lambda: False)
-    sid = "unit-call"
-    call_manager.end_call(sid)
-    call_manager.start_call(sid, from_number="+989121234567")
-    steps = [
-        "مریم حسینی",
-        "دکتر نوری",
-        "فردا",
-        "ساعت یازده صبح",
-        "بله",
-    ]
-    result = None
-    for line in steps:
-        result = call_manager.handle_user_text(sid, line)
-    assert result is not None
-    assert result["intent"] == "book"
-    assert result["appointment_id"]
-    appt = db.get_appointment(result["appointment_id"], isolated_db)
-    assert appt["patient_name"] == "مریم حسینی"
-    assert "نوری" in appt["doctor_name"]

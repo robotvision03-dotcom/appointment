@@ -32,18 +32,16 @@ def run_dialogue() -> None:
     call_manager.start_call(sid, from_number="+989120000002")
     print("AGENT:", call_manager.greeting())
     script = [
-        "علی محمدی",
-        "دکتر کریمی",
-        "فردا",
-        "ساعت ده صبح",
-        "بله",
+        "مکانیک",
+        "اول",
+        "۰۹۱۲۱۲۳۴۵۶۷",
     ]
     for line in script:
         print("USER:", line)
         result = call_manager.handle_user_text(sid, line)
         print("AGENT:", result["reply"], "| phase=", result["phase"], "| intent=", result["intent"])
-        if result.get("appointment_id"):
-            print("BOOKED id=", result["appointment_id"])
+        if result.get("connect"):
+            print("CONNECT", result["connect"].get("provider", {}).get("name"))
 
 
 def main() -> int:

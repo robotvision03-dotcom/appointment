@@ -1,8 +1,4 @@
-"""Per-call conversation state and the booking dialogue state machine.
-
-The LLM is used when Ollama is reachable. If it times out or is missing, a
-deterministic Persian flow still collects name → doctor → date → time → confirm.
-"""
+"""Per-call conversation: pick a service, pick a provider, then connect them."""
 
 from __future__ import annotations
 
@@ -13,7 +9,9 @@ from typing import Any
 
 from src import db
 from src.config import config
+from src.dispatch import connect_customer_to_provider, format_provider_list
 from src.llm import llm
+from src.sms import extract_iran_mobile
 from src.utils import (
     is_no,
     is_yes,
@@ -25,6 +23,10 @@ from src.utils import (
 )
 
 PHASE_GREETING = "greeting"
+PHASE_ASK_SERVICE = "ask_service"
+PHASE_ASK_PROVIDER = "ask_provider"
+PHASE_ASK_PHONE = "ask_phone"
+PHASE_CONNECTED = "connected"
 PHASE_ASK_NAME = "ask_name"
 PHASE_ASK_DOCTOR = "ask_doctor"
 PHASE_ASK_DATE = "ask_date"
@@ -34,7 +36,8 @@ PHASE_BOOKED = "booked"
 PHASE_TRANSFER = "transfer"
 PHASE_DONE = "done"
 
-GREETING_TEXT = "سلام. نام کامل‌تان چیست؟"
+GREETING_TEXT = "وقت بخیر چه سرویسی را نیاز دارید؟"
+ASK_SERVICE = GREETING_TEXT
 ASK_REPEAT = "متوجه نشدم. کوتاه بفرمایید."
 ASK_DOCTOR = "نام پزشک؟"
 ASK_DATE = "چه روزی؟ امروز، فردا، یا تاریخ."
@@ -60,6 +63,7 @@ class CallState:
     created_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     appointment_id: int | None = None
     transfer_requested: bool = False
+    last_connect: dict[str, Any] | None = None
 
     def transcript_history(self) -> str:
         lines = []
@@ -76,7 +80,12 @@ class CallManager:
 
     def start_call(self, call_sid: str, from_number: str = "", to_number: str = "") -> CallState:
         with self._lock:
-            state = CallState(call_sid=call_sid, from_number=from_number, to_number=to_number)
+            state = CallState(
+                call_sid=call_sid,
+                from_number=from_number,
+                to_number=to_number,
+                phase=PHASE_ASK_SERVICE,
+            )
             self.active_calls[call_sid] = state
             log.info("Call started %s from %s", call_sid, from_number)
             return state
@@ -104,11 +113,14 @@ class CallManager:
             state.context.append({"role": "assistant", "content": assistant_reply})
 
     def greeting(self) -> str:
+        names = "، ".join(s["name"] for s in db.list_services())
+        if names:
+            return f"{GREETING_TEXT} مثلاً {names}."
         return GREETING_TEXT
 
     def handle_user_text(self, call_sid: str, user_text: str) -> dict[str, Any]:
         """
-        Process one patient utterance.
+        Process one customer utterance.
 
         Returns dict with keys: reply, phase, intent, patient_info, appointment_id.
         """
@@ -122,28 +134,137 @@ class CallManager:
             self.update_context(call_sid, user_text, reply)
             return self._result(state, reply, "continue")
 
-        if wants_transfer(text) and state.phase not in (PHASE_BOOKED, PHASE_DONE):
+        if wants_transfer(text) and state.phase not in (PHASE_BOOKED, PHASE_DONE, PHASE_CONNECTED):
             return self._begin_transfer(state, text)
 
-        llm_result = None
-        if config.ollama_enabled and _needs_llm(state, text) and llm.is_available():
-            llm_result = llm.interpret_turn(
-                text,
-                state.context,
-                _doctors_prompt(),
-                state.patient_info,
-                state.phase,
-            )
-        if llm_result:
-            self._merge_extracted(state, llm_result.get("extracted") or {})
-            intent = (llm_result.get("intent") or "continue").lower()
-            if intent == "transfer":
-                return self._begin_transfer(state, text)
-            spoken = _spoken_reply(llm_result.get("reply"))
-            machine = self._advance_machine(state, text, llm_reply=spoken, prefer_llm=True)
-            return machine
+        phone = extract_iran_mobile(text)
+        if phone and not state.from_number:
+            state.from_number = phone
+        if phone:
+            state.patient_info["phone"] = phone
 
-        return self._advance_machine(state, text)
+        return self._advance_dispatch(state, text)
+
+    def _advance_dispatch(self, state: CallState, text: str) -> dict[str, Any]:
+        info = state.patient_info
+        if state.phase == PHASE_CONNECTED:
+            again = db.find_service(text)
+            if again:
+                phone_keep = info.get("phone")
+                state.patient_info = {"phone": phone_keep} if phone_keep else {}
+                info = state.patient_info
+                state.last_connect = None
+            elif not any(w in text for w in ("دیگر", "جدید", "سرویس", "می‌خواهم", "میخوام")):
+                reply = "درخواست ثبت شد. اگر سرویس دیگری می‌خواهید نامش را بگویید."
+                self.update_context(state.call_sid, text, reply)
+                return self._result(state, reply, "continue")
+            else:
+                state.phase = PHASE_ASK_SERVICE
+                names = "، ".join(s["name"] for s in db.list_services())
+                reply = f"چه سرویس دیگری؟ {names}"
+                self.update_context(state.call_sid, text, reply)
+                return self._result(state, reply, "continue")
+
+        if not info.get("service_id"):
+            svc = db.find_service(text)
+            if not svc:
+                names = "، ".join(s["name"] for s in db.list_services())
+                state.phase = PHASE_ASK_SERVICE
+                reply = f"متوجه نشدم. یکی از این‌ها را بگویید: {names}."
+                self.update_context(state.call_sid, text, reply)
+                return self._result(state, reply, "continue")
+            info["service_id"] = svc["id"]
+            info["service_name"] = svc["name"]
+            listing = format_provider_list(int(svc["id"]))
+            provider = db.find_provider(text, int(svc["id"]))
+            if provider:
+                return self._offer_or_connect(state, text, provider)
+            state.phase = PHASE_ASK_PROVIDER
+            reply = (
+                f"برای «{svc['name']}» این سرویس‌دهندگان هستند: {listing}. "
+                "کدام را می‌خواهید؟ شماره یا نام را بگویید."
+            )
+            self.update_context(state.call_sid, text, reply)
+            return self._result(state, reply, "continue")
+
+        if not info.get("provider_id"):
+            provider = db.find_provider(text, int(info["service_id"]))
+            if not provider:
+                listing = format_provider_list(int(info["service_id"]))
+                state.phase = PHASE_ASK_PROVIDER
+                reply = f"کدام سرویس‌دهنده؟ {listing}"
+                self.update_context(state.call_sid, text, reply)
+                return self._result(state, reply, "continue")
+            return self._offer_or_connect(state, text, provider)
+
+        return self._offer_or_connect(state, text, db.get_provider(int(info["provider_id"])))
+
+    def _customer_phone(self, state: CallState) -> str:
+        return (
+            state.patient_info.get("phone")
+            or extract_iran_mobile(state.from_number)
+            or state.from_number
+            or ""
+        )
+
+    def _offer_or_connect(self, state: CallState, text: str, provider: dict[str, Any] | None) -> dict[str, Any]:
+        if not provider:
+            state.phase = PHASE_ASK_PROVIDER
+            reply = ASK_REPEAT
+            self.update_context(state.call_sid, text, reply)
+            return self._result(state, reply, "continue")
+        info = state.patient_info
+        info["provider_id"] = provider["id"]
+        info["provider_name"] = provider["name"]
+        info["provider_phone"] = provider["phone"]
+        phone = self._customer_phone(state)
+        if not extract_iran_mobile(phone) and provider["phone"] not in {"115", "110", "125"}:
+            state.phase = PHASE_ASK_PHONE
+            reply = (
+                f"{provider['name']} انتخاب شد. شماره موبایل خودتان را بفرمایید "
+                "تا همان لحظه با سرویس‌دهنده تماس بگیریم."
+            )
+            self.update_context(state.call_sid, text, reply)
+            return self._result(state, reply, "continue")
+        if not extract_iran_mobile(phone) and provider["phone"] in {"115", "110", "125"}:
+            phone = phone or "نامشخص"
+        return self._connect_now(state, text, provider, phone)
+
+    def _connect_now(
+        self,
+        state: CallState,
+        text: str,
+        provider: dict[str, Any],
+        customer_phone: str,
+    ) -> dict[str, Any]:
+        result = connect_customer_to_provider(
+            customer_phone=customer_phone,
+            provider_id=int(provider["id"]),
+            customer_name=str(state.patient_info.get("patient_name") or ""),
+        )
+        state.last_connect = result
+        state.phase = PHASE_CONNECTED
+        name = provider["name"]
+        if result.get("call", {}).get("ok"):
+            reply = (
+                f"الان با {name} تماس گرفتیم. اگر جواب ندهند پیامکی با شماره شما برایشان می‌رود. "
+                f"شما هم می‌توانید مستقیم تماس بگیرید: {provider['phone']}"
+            )
+        elif result.get("call", {}).get("reason") == "emergency_number":
+            reply = f"برای {name} همین حالا با {provider['phone']} تماس بگیرید."
+        elif result.get("sms", {}).get("ok"):
+            reply = (
+                f"تماس خودکار برقرار نشد؛ پیامکی شامل شماره شما برای {name} فرستاده شد. "
+                f"تماس مستقیم: {provider['phone']}"
+            )
+        else:
+            reply = (
+                f"{name} انتخاب شد. چون درگاه تماس پیکربندی نشده، "
+                f"الان روی صفحه تماس بگیرید: {provider['phone']}. "
+                "شماره شما هم برای پیامک آماده است."
+            )
+        self.update_context(state.call_sid, text, reply)
+        return self._result(state, reply, "connect")
 
     def _begin_transfer(self, state: CallState, user_text: str) -> dict[str, Any]:
         state.phase = PHASE_TRANSFER
@@ -321,6 +442,10 @@ class CallManager:
             "patient_info": dict(state.patient_info),
             "appointment_id": state.appointment_id,
             "call_sid": state.call_sid,
+            "connect": state.last_connect,
+            "providers": db.list_providers(int(state.patient_info["service_id"]))
+            if state.patient_info.get("service_id")
+            else [],
         }
 
 

@@ -18,6 +18,7 @@ from src.handoff import start_warm_transfer
 from src.live_voice import handle_browser_voice
 from src.sip_bridge import sip_turn
 from src.sms import send_booking_sms
+from src.dispatch import connect_customer_to_provider
 from src.twilio_handler import (
     handle_incoming_call,
     handle_media_stream,
@@ -27,8 +28,8 @@ from src.twilio_handler import (
 from src.utils import log
 
 app = FastAPI(
-    title="Persian AI Voice Agent",
-    description="منشی صوتی فارسی برای نوبت‌دهی پزشکی",
+    title="Persian service dispatcher",
+    description="اتصال مشتری به سرویس‌دهنده (آرایشگر، مکانیک، اورژانس، پزشک و …)",
     version="1.0.0",
 )
 
@@ -73,6 +74,7 @@ def health() -> dict:
         "voice": {"browser": True, "stt": stt.available, "tts": tts.available},
         "receptionist_number": config.receptionist_number,
         "doctors": len(db.list_doctors()),
+        "services": len(db.list_services()),
     }
 
 
@@ -105,6 +107,39 @@ async def receptionist_join(request: Request) -> Response:
     conference = request.query_params.get("conference") or "clinic"
     play = request.query_params.get("play") or ""
     return twiml_response(receptionist_join_twiml(conference, play))
+
+
+@app.get("/api/services")
+def api_services() -> list[dict]:
+    return db.list_services()
+
+
+@app.get("/api/providers")
+def api_providers(service_id: int) -> list[dict]:
+    return db.list_providers(service_id)
+
+
+@app.post("/api/connect")
+async def api_connect(request: Request) -> JSONResponse:
+    """Customer picks a provider; we call them and SMS the customer's number."""
+    body = await request.json()
+    try:
+        provider_id = int(body.get("provider_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "سرویس‌دهنده را انتخاب کنید."}, status_code=400)
+    phone = str(body.get("customer_phone") or body.get("phone") or "").strip()
+    name = str(body.get("customer_name") or body.get("name") or "").strip()
+    if not phone:
+        return JSONResponse({"ok": False, "error": "شماره موبایل مشتری لازم است."}, status_code=400)
+    if not db.get_provider(provider_id):
+        return JSONResponse({"ok": False, "error": "سرویس‌دهنده نامعتبر است."}, status_code=400)
+    result = connect_customer_to_provider(phone, provider_id, name)
+    return JSONResponse(result)
+
+
+@app.get("/api/requests")
+def api_requests() -> list[dict]:
+    return db.list_service_requests()
 
 
 @app.get("/api/doctors")
@@ -175,7 +210,7 @@ async def api_simulate(request: Request) -> JSONResponse:
             return JSONResponse(
                 {
                     "reply": call_manager.greeting(),
-                    "phase": "ask_name",
+                    "phase": "ask_service",
                     "intent": "continue",
                     "patient_info": {},
                     "appointment_id": None,
@@ -204,7 +239,7 @@ async def api_simulate_reset(request: Request) -> JSONResponse:
     session_id = str(body.get("session_id") or "demo-local")
     call_manager.end_call(session_id)
     call_manager.start_call(session_id, from_number=str(body.get("phone") or ""))
-    return JSONResponse({"ok": True, "reply": call_manager.greeting(), "phase": "ask_name"})
+    return JSONResponse({"ok": True, "reply": call_manager.greeting(), "phase": "ask_service"})
 
 
 @app.post("/sip/turn")
