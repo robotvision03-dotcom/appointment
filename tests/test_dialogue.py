@@ -95,6 +95,12 @@ def test_salon_keyword_and_five_barbers(isolated_db):
     barbers = db.list_providers(svc["id"], isolated_db)
     assert len(barbers) >= 5
     assert all(p["phone"] for p in barbers)
+    call_manager.end_call("salon-kw")
+    call_manager.start_call("salon-kw")
+    r = call_manager.handle_user_text("salon-kw", "آرایشگاه")
+    assert r["phase"] == "ask_provider"
+    assert "نیلوفر" in r["reply"]
+    assert "گلبرگ" in r["reply"]
 
 
 def test_connect_api_emergency(isolated_db):

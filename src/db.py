@@ -424,6 +424,17 @@ def list_services(db_path: Path | None = None) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def leftover_after_service(text: str, svc: dict[str, Any]) -> str:
+    """Strip the service name/keywords so «آرایشگاه» is not treated as a shop named آرایشگاه."""
+    t = (text or "").replace("ي", "ی")
+    words = [svc.get("name") or ""] + (svc.get("keywords") or "").split()
+    words.sort(key=len, reverse=True)
+    for w in words:
+        if len(w) >= 2:
+            t = t.replace(w, " ")
+    return " ".join(t.split())
+
+
 def find_service(text: str, db_path: Path | None = None) -> dict[str, Any] | None:
     t = (text or "").replace("ي", "ی")
     for svc in list_services(db_path):

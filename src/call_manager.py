@@ -176,7 +176,8 @@ class CallManager:
             info["service_id"] = svc["id"]
             info["service_name"] = svc["name"]
             listing = format_provider_list(int(svc["id"]))
-            provider = db.find_provider(text, int(svc["id"]))
+            rest = db.leftover_after_service(text, svc)
+            provider = db.find_provider(rest, int(svc["id"])) if rest else None
             if provider:
                 return self._offer_or_connect(state, text, provider)
             state.phase = PHASE_ASK_PROVIDER
