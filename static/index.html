@@ -350,6 +350,8 @@
           btn.classList.add("sel");
         });
       });
+      const first = el.querySelector(".provider");
+      if (first) first.click();
     }
 
     async function loadRequests() {
@@ -409,12 +411,18 @@
         liveWs.send(JSON.stringify({ event: "text", text, phone: phoneEl.value.trim() }));
         return;
       }
-      const res = await fetch("/api/simulate", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ session_id: sessionId, text, phone: phoneEl.value.trim() }),
-      }).then(r => r.json());
-      applyAssistant(res);
+      try {
+        const res = await fetch("/api/simulate", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ session_id: sessionId, text, phone: phoneEl.value.trim() }),
+          signal: AbortSignal.timeout(20000),
+        }).then(r => r.json());
+        applyAssistant(res);
+      } catch (err) {
+        addMsg("agent", "ارتباط با سرور برقرار نشد. صفحه را تازه کنید.", "سیستم");
+        console.error(err);
+      }
     }
 
     document.getElementById("form").addEventListener("submit", async (e) => {
@@ -454,24 +462,33 @@
         return;
       }
       msg.textContent = "در حال تماس…";
-      const res = await fetch("/api/connect", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          provider_id: selectedProviderId,
-          customer_name: document.getElementById("cf-name").value.trim(),
-          customer_phone: document.getElementById("cf-phone").value.trim(),
-        }),
-      }).then(r => r.json());
-      if (res.ok) {
-        msg.className = "ok";
-        const p = res.provider || {};
-        msg.textContent = `درخواست ثبت شد. ${p.name} — تماس ${res.call && res.call.ok ? "ارسال شد" : "آزمایشی/ناموفق"}، پیامک ${res.sms && res.sms.ok ? "ارسال شد" : "آزمایشی/ناموفق"}`;
-        showConnect(res);
-        loadRequests();
-      } else {
+      const customerPhone = document.getElementById("cf-phone").value.trim();
+      if (customerPhone) phoneEl.value = customerPhone;
+      try {
+        const res = await fetch("/api/connect", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            provider_id: selectedProviderId,
+            customer_name: document.getElementById("cf-name").value.trim(),
+            customer_phone: customerPhone,
+          }),
+          signal: AbortSignal.timeout(20000),
+        }).then(r => r.json());
+        if (res.ok) {
+          msg.className = "ok";
+          const p = res.provider || {};
+          msg.textContent = `درخواست ثبت شد. ${p.name} — تماس ${res.call && res.call.ok ? "ارسال شد" : "آزمایشی/ناموفق"}، پیامک ${res.sms && res.sms.ok ? "ارسال شد" : "آزمایشی/ناموفق"}`;
+          showConnect(res);
+          loadRequests();
+        } else {
+          msg.className = "err";
+          msg.textContent = res.error || "اتصال انجام نشد.";
+        }
+      } catch (err) {
         msg.className = "err";
-        msg.textContent = res.error || "اتصال انجام نشد.";
+        msg.textContent = "ارتباط با سرور قطع شد. دوباره تلاش کنید.";
+        console.error(err);
       }
     });
     document.getElementById("bf-doctor").addEventListener("change", refreshSlots);
