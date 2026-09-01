@@ -138,14 +138,26 @@
     th { color: var(--muted); font-weight: 500; }
     .empty { color: var(--muted); padding: 0.75rem 0; }
     .row-actions { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
-    .hint { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; line-height: 1.6; }
+    .book-form label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.45rem 0 0.2rem; }
+    .book-form input, .book-form select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 0.55rem 0.7rem;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    .book-form .err { color: var(--danger); font-size: 0.85rem; margin-top: 0.4rem; }
+    .book-form .ok { color: var(--accent); font-size: 0.85rem; margin-top: 0.4rem; }
   </style>
 </head>
 <body>
   <header>
     <div>
       <h1>منشی صوتی نوبت‌دهی پزشکی</h1>
-      <p class="sub">قابل استفاده در ایران: گفتگوی متنی یا میکروفون همین صفحه. پیامک با کاوه‌نگار.</p>
+      <p class="sub">شما نوبت را خودتان ثبت می‌کنید. گفتگو فقط در صورت تمایل است و کوتاه می‌ماند.</p>
     </div>
     <div class="pills" id="status"></div>
   </header>
@@ -161,15 +173,29 @@
         <button type="submit">ارسال</button>
       </form>
       <div id="transfer" hidden class="transfer-box"></div>
-      <p class="hint">
-        این سامانه برای ایران است: تماس صوتی از میکروفون همین صفحه است
-        (با مدل Vosk روی همین سرور). پیامک تأیید با کاوه‌نگار ارسال می‌شود.
-        نمونه متنی: «علی رضایی» ← «دکتر کریمی» ← «فردا» ← «ساعت ده صبح» ← «بله».
-        انتقال به منشی: «می‌خواهم با منشی صحبت کنم».
-      </p>
+      <p class="hint">گفتگو اختیاری است. برای ثبت بدون حرف زدن از فرم سمت چپ استفاده کنید. اگر حرف می‌زنید: نام، پزشک، روز، ساعت، بله.</p>
     </section>
     <div>
       <section class="card">
+        <h2>ثبت نوبت توسط بیمار</h2>
+        <form class="book-form" id="book-form">
+          <label>نام و نام خانوادگی</label>
+          <input type="text" id="bf-name" required placeholder="علی رضایی" />
+          <label>موبایل (اختیاری، برای پیامک)</label>
+          <input type="tel" id="bf-phone" placeholder="0912…" />
+          <label>پزشک</label>
+          <select id="bf-doctor" required></select>
+          <label>تاریخ</label>
+          <input type="date" id="bf-date" required />
+          <label>ساعت</label>
+          <select id="bf-time" required>
+            <option value="">ابتدا تاریخ را انتخاب کنید</option>
+          </select>
+          <button type="submit" style="margin-top:0.85rem;width:100%">ثبت نوبت</button>
+          <div id="bf-msg"></div>
+        </form>
+      </section>
+      <section class="card" style="margin-top:1rem">
         <h2>پزشکان</h2>
         <div id="doctors" class="empty">در حال بارگذاری…</div>
       </section>
@@ -188,7 +214,7 @@
     const textEl = document.getElementById("text");
     const phoneEl = document.getElementById("phone");
     const liveBtn = document.getElementById("live");
-    const GREETING = "سلام، وقت بخیر. به بخش نوبت‌دهی کلینیک خوش آمدید. لطفاً نام و نام خانوادگی خود را بفرمایید.";
+    const GREETING = "سلام. نام کامل‌تان چیست؟";
     let liveWs = null;
     let liveCtx = null;
     let liveStream = null;
@@ -244,6 +270,24 @@
         `<table><thead><tr><th>نام</th><th>تخصص</th></tr></thead><tbody>` +
         docs.map(d => `<tr><td>${d.name}</td><td>${d.specialty}</td></tr>`).join("") +
         `</tbody></table>`;
+      const sel = document.getElementById("bf-doctor");
+      sel.innerHTML = `<option value="">انتخاب پزشک</option>` +
+        docs.map(d => `<option value="${d.id}">${d.name} — ${d.specialty}</option>`).join("");
+    }
+
+    async function refreshSlots() {
+      const doctorId = document.getElementById("bf-doctor").value;
+      const date = document.getElementById("bf-date").value;
+      const timeSel = document.getElementById("bf-time");
+      if (!doctorId || !date) {
+        timeSel.innerHTML = `<option value="">ابتدا پزشک و تاریخ</option>`;
+        return;
+      }
+      const data = await fetch(`/api/slots?doctor_id=${doctorId}&date=${date}`).then(r => r.json());
+      const slots = data.slots || [];
+      timeSel.innerHTML = slots.length
+        ? slots.map(s => `<option value="${s}">${s}</option>`).join("")
+        : `<option value="">ساعت خالی نیست</option>`;
     }
 
     async function loadAppts() {
@@ -272,15 +316,6 @@
         body: JSON.stringify({ session_id: sessionId, text, phone: phoneEl.value.trim() }),
       }).then(r => r.json());
       applyAssistant(res);
-      if (text && res.reply) {
-        if (healthInfo.tts && healthInfo.tts.available) {
-          fetch("/api/tts?text=" + encodeURIComponent(res.reply))
-            .then(r => r.blob())
-            .then(b => { const a = new Audio(URL.createObjectURL(b)); a.play().catch(() => {}); });
-        } else {
-          speakFallback(res.reply);
-        }
-      }
     }
 
     document.getElementById("form").addEventListener("submit", async (e) => {
@@ -309,6 +344,39 @@
       }
     });
     document.getElementById("refresh").addEventListener("click", loadAppts);
+    document.getElementById("bf-doctor").addEventListener("change", refreshSlots);
+    document.getElementById("bf-date").addEventListener("change", refreshSlots);
+    const d0 = new Date();
+    d0.setDate(d0.getDate() + 1);
+    document.getElementById("bf-date").value = d0.toISOString().slice(0, 10);
+
+    document.getElementById("book-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("bf-msg");
+      msg.className = "";
+      msg.textContent = "در حال ثبت…";
+      const res = await fetch("/api/book", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          patient_name: document.getElementById("bf-name").value.trim(),
+          phone: document.getElementById("bf-phone").value.trim(),
+          doctor_id: document.getElementById("bf-doctor").value,
+          date: document.getElementById("bf-date").value,
+          time: document.getElementById("bf-time").value,
+        }),
+      }).then(r => r.json());
+      if (res.ok) {
+        msg.className = "ok";
+        const a = res.appointment || {};
+        msg.textContent = `ثبت شد. کد ${a.id} — ${a.doctor_name} — ${a.date} ${a.time}`;
+        loadAppts();
+        refreshSlots();
+      } else {
+        msg.className = "err";
+        msg.textContent = res.error || "ثبت نشد.";
+      }
+    });
 
     async function stopLive() {
       if (liveWs) {

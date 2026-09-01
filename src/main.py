@@ -112,6 +112,50 @@ def api_doctors() -> list[dict]:
     return db.list_doctors()
 
 
+@app.get("/api/slots")
+def api_slots(doctor_id: int, date: str) -> dict:
+    return {"slots": db.get_available_slots(doctor_id, date)}
+
+
+@app.post("/api/book")
+async def api_book(request: Request) -> JSONResponse:
+    """Patient-managed booking: no conversation required."""
+    body = await request.json()
+    name = str(body.get("patient_name") or body.get("name") or "").strip()
+    phone = str(body.get("phone") or "")
+    try:
+        doctor_id = int(body.get("doctor_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "پزشک را انتخاب کنید."}, status_code=400)
+    date = str(body.get("date") or "").strip()
+    time = str(body.get("time") or "").strip()
+    if not name or not date or not time:
+        return JSONResponse({"ok": False, "error": "نام، تاریخ و ساعت لازم است."}, status_code=400)
+    if not db.get_doctor(doctor_id):
+        return JSONResponse({"ok": False, "error": "پزشک نامعتبر است."}, status_code=400)
+    try:
+        appt_id = db.book_appointment(name, phone, doctor_id, date, time)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+    appt = db.get_appointment(appt_id)
+    if phone:
+        from src.call_manager import call_manager
+
+        sid = f"form-{appt_id}"
+        call_manager.end_call(sid)
+        st = call_manager.start_call(sid, from_number=phone)
+        st.appointment_id = appt_id
+        st.patient_info = {
+            "patient_name": name,
+            "doctor_name": (appt or {}).get("doctor_name"),
+            "date": date,
+            "time": time,
+        }
+        send_booking_sms(sid)
+        call_manager.end_call(sid)
+    return JSONResponse({"ok": True, "appointment": appt})
+
+
 @app.get("/api/appointments")
 def api_appointments() -> list[dict]:
     return db.list_appointments()

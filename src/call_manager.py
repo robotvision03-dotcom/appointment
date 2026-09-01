@@ -34,14 +34,11 @@ PHASE_BOOKED = "booked"
 PHASE_TRANSFER = "transfer"
 PHASE_DONE = "done"
 
-GREETING_TEXT = (
-    "سلام، وقت بخیر. به بخش نوبت‌دهی کلینیک خوش آمدید. "
-    "لطفاً نام و نام خانوادگی خود را بفرمایید."
-)
-ASK_REPEAT = "ببخشید، متوجه نشدم. ممکن است واضح‌تر تکرار کنید؟"
-ASK_DOCTOR = "نوبت کدام یک از پزشکان کلینیک را می‌خواهید؟"
-ASK_DATE = "چه روزی برای ویزیت مناسب است؟ می‌توانید بگویید امروز، فردا، یا تاریخ دقیق."
-ASK_TIME = "ساعت مورد نظرتان را بفرمایید."
+GREETING_TEXT = "سلام. نام کامل‌تان چیست؟"
+ASK_REPEAT = "متوجه نشدم. کوتاه بفرمایید."
+ASK_DOCTOR = "نام پزشک؟"
+ASK_DATE = "چه روزی؟ امروز، فردا، یا تاریخ."
+ASK_TIME = "چه ساعتی؟"
 APOLOGY_DB = "از اختلال پیش‌آمده پوزش می‌خواهیم. لطفاً دوباره برای ثبت نوبت تلاش کنید."
 TRANSFER_ACK = (
     "چشم، شما را به منشی انسانی کلینیک وصل می‌کنم. لطفاً روی خط بمانید."
@@ -241,8 +238,8 @@ class CallManager:
                 return self._result(state, reply, "continue")
             state.phase = PHASE_CONFIRM
             reply = (
-                f"خلاصه نوبت: {info.get('patient_name')}، {info.get('doctor_name')}، "
-                f"{info.get('date')} ساعت {info.get('time')}. برای ثبت نهایی بفرمایید بله."
+                f"ثبت شود؟ {info.get('patient_name')}، {info.get('doctor_name')}، "
+                f"{info.get('date')} {info.get('time')}. بله یا خیر."
             )
             self.update_context(state.call_sid, text, reply)
             return self._result(state, reply, "continue")
@@ -388,16 +385,15 @@ def _missing_slot(info: dict) -> str | None:
 
 def _question_for(missing: str, info: dict) -> str:
     if missing == "name":
-        return "لطفاً نام و نام خانوادگی خود را کامل بفرمایید."
+        return "نام کامل‌تان؟"
     if missing == "doctor":
-        who = info.get("patient_name") or "شما"
-        return f"{who}، نوبت کدام پزشک را می‌خواهید؟ {_doctor_names()}."
+        return ASK_DOCTOR
     if missing == "date":
-        return f"{info.get('doctor_name')} ثبت شد. {ASK_DATE}"
+        return ASK_DATE
     if missing == "time":
         slots = db.get_available_slots(int(info["doctor_id"]), info["date"])
-        shown = "، ".join(slots[:6]) or "ظرفیتی نیست"
-        return f"برای تاریخ {info['date']} ساعات آزاد: {shown}. {ASK_TIME}"
+        shown = "، ".join(slots[:6]) or "—"
+        return f"ساعت؟ آزاد: {shown}"
     return ASK_REPEAT
 
 
