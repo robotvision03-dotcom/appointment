@@ -247,21 +247,16 @@ class CallManager:
         name = provider["name"]
         if result.get("call", {}).get("ok"):
             reply = (
-                f"الان با {name} تماس گرفتیم. اگر جواب ندهند پیامکی با شماره شما برایشان می‌رود. "
-                f"شما هم می‌توانید مستقیم تماس بگیرید: {provider['phone']}"
+                f"الان خط را به {name} وصل می‌کنیم تا برای قرار ملاقات صحبت کنید. "
+                f"اگر جواب ندادند شماره {provider['phone']} برایتان پیامک می‌شود. "
+                f"همین حالا هم می‌توانید تماس بگیرید: {provider['phone']}"
             )
         elif result.get("call", {}).get("reason") == "emergency_number":
-            reply = f"برای {name} همین حالا با {provider['phone']} تماس بگیرید."
-        elif result.get("sms", {}).get("ok"):
-            reply = (
-                f"تماس خودکار برقرار نشد؛ پیامکی شامل شماره شما برای {name} فرستاده شد. "
-                f"تماس مستقیم: {provider['phone']}"
-            )
+            reply = f"برای صحبت با {name} همین حالا با {provider['phone']} تماس بگیرید."
         else:
             reply = (
-                f"{name} انتخاب شد. چون درگاه تماس پیکربندی نشده، "
-                f"الان روی صفحه تماس بگیرید: {provider['phone']}. "
-                "شماره شما هم برای پیامک آماده است."
+                f"{name} الان جواب نداد. شماره فروشنده برایتان پیامک شد: {provider['phone']}. "
+                "روی همان شماره تماس بگیرید تا قرار ملاقات را هماهنگ کنید."
             )
         self.update_context(state.call_sid, text, reply)
         return self._result(state, reply, "connect")

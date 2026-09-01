@@ -82,8 +82,19 @@ def test_dispatch_dialogue(isolated_db, monkeypatch):
     assert r["connect"]["ok"] is True
     assert r["connect"]["provider"]["name"] == "تعمیرگاه آزادی"
     assert r["connect"]["sms"]["dry_run"] is True
+    assert r["connect"]["sms_to_customer"]["dry_run"] is True
+    assert "09121111001" in (r["connect"]["sms_to_customer"].get("message") or "")
     rows = db.list_service_requests(isolated_db)
     assert rows[0]["customer_phone"].endswith("9121234567") or "09121234567" in rows[0]["customer_phone"]
+
+
+def test_salon_keyword_and_five_barbers(isolated_db):
+    svc = db.find_service("آرایشگاه", isolated_db)
+    assert svc is not None
+    assert svc["name"] == "آرایشگر"
+    barbers = db.list_providers(svc["id"], isolated_db)
+    assert len(barbers) >= 5
+    assert all(p["phone"] for p in barbers)
 
 
 def test_connect_api_emergency(isolated_db):

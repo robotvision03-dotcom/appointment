@@ -169,7 +169,7 @@
   <header>
     <div>
       <h1>اتصال مشتری به سرویس‌دهنده</h1>
-      <p class="sub">وقت بخیر چه سرویسی را نیاز دارید؟ آرایشگر، مکانیک، اورژانس، پزشک و … را بگویید؛ بعد سرویس‌دهنده را انتخاب کنید تا همان لحظه با او تماس گرفته شود.</p>
+      <p class="sub">در شروع از شما نوع سرویس پرسیده می‌شود. مثلاً بگویید آرایشگاه. سپس فروشنده را انتخاب کنید تا برای قرار ملاقات با او صحبت کنید. اگر جواب نداد، شماره‌اش برایتان پیامک می‌شود.</p>
     </div>
     <div class="pills" id="status"></div>
   </header>
@@ -185,7 +185,7 @@
         <button type="submit">ارسال</button>
       </form>
       <div id="transfer" hidden class="transfer-box"></div>
-      <p class="hint">مثال: «مکانیک» سپس «اول» سپس شماره موبایل‌تان. اگر کاوه‌نگار فعال باشد با فروشنده تماس و در صورت عدم پاسخ پیامک با شماره شما فرستاده می‌شود.</p>
+      <p class="hint">مثال: «آرایشگاه» سپس «۳» یا «نیلوفر» سپس موبایل‌تان. نرم‌افزار به فروشنده زنگ می‌زند تا قرار ملاقات را هماهنگ کنید. اگر جواب نداد، شماره فروشنده برایتان اس‌ام‌اس می‌شود.</p>
     </section>
     <div>
       <section class="card">
@@ -283,12 +283,13 @@
       const telP = c.tel_provider || ("tel:" + (p.phone || ""));
       const telC = c.tel_customer || "";
       const callOk = c.call && c.call.ok;
-      const smsOk = c.sms && c.sms.ok;
-      const dry = (c.call && c.call.dry_run) || (c.sms && c.sms.dry_run);
-      box.innerHTML = `<strong>اتصال به ${escapeHtml(p.name || "سرویس‌دهنده")}</strong><br>
-        تماس خودکار: ${callOk ? "ارسال شد" : (dry ? "آزمایشی — کلید کاوه‌نگار نیست" : "ناموفق")}
-        · پیامک شماره مشتری: ${smsOk ? "ارسال شد" : (dry ? "آزمایشی" : "ناموفق")}<br>
-        <a href="${escapeHtml(telP)}">تماس با سرویس‌دهنده: ${escapeHtml(p.phone || "")}</a>
+      const dry = (c.call && c.call.dry_run) || (c.sms_to_customer && c.sms_to_customer.dry_run);
+      const cs = c.sms_to_customer || {};
+      const custSms = cs.ok ? "ارسال شد" : (cs.dry_run ? "آزمایشی (کلید کاوه‌نگار نیست)" : (cs.reason === "not_needed" ? "لازم نبود" : "ناموفق"));
+      box.innerHTML = `<strong>اتصال برای قرار ملاقات با ${escapeHtml(p.name || "سرویس‌دهنده")}</strong><br>
+        تماس با فروشنده: ${callOk ? "ارسال شد — گوشی را بردارید و صحبت کنید" : (dry ? "آزمایشی — کلید کاوه‌نگار نیست" : "بی‌پاسخ")}
+        · پیامک شماره فروشنده برای شما: ${custSms}<br>
+        <a href="${escapeHtml(telP)}">تماس با فروشنده: ${escapeHtml(p.phone || "")}</a>
         ${telC ? `<br><a href="${escapeHtml(telC)}">تماس با مشتری</a>` : ""}`;
     }
     function showTransfer(t) {
@@ -298,7 +299,6 @@
       const num = t.receptionist_number || "";
       box.innerHTML = `<strong>انتقال به منشی انسان</strong><br>${escapeHtml(t.summary || "")}<br>
         <a href="tel:${escapeHtml(num)}">تماس با منشی: ${escapeHtml(num)}</a>`;
-    }
     }
 
     async function health() {

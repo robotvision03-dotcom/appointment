@@ -135,7 +135,7 @@ def init_db(db_path: Path | None = None) -> None:
                     (doc["name"], doc["specialty"], json.dumps(doc["available_days"], ensure_ascii=False)),
                 )
             log.info("Seeded %d doctors", len(SEED_DOCTORS))
-        _seed_services(conn)
+        _ensure_service_catalog(conn)
 
 
 def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -301,18 +301,24 @@ def get_appointment(appointment_id: int, db_path: Path | None = None) -> dict[st
 SEED_SERVICES = [
     {
         "name": "آرایشگر",
-        "keywords": "آرایش آرایشگر پیرایش سلمانی مو کوتاهی",
+        "keywords": "آرایش آرایشگر آرایشگاه پیرایش سلمانی مو کوتاهی سالن زیبایی",
         "providers": [
-            ("سالن گلبرگ", "09121111111", "ونک"),
-            ("پیرایش نو", "09122222222", "انقلاب"),
+            ("سالن گلبرگ", "09121001001", "ونک"),
+            ("پیرایش نو", "09121001002", "انقلاب"),
+            ("آرایشگاه نیلوفر", "09121001003", "سعادت‌آباد"),
+            ("سالن مردانه کاسپین", "09121001004", "تجریش"),
+            ("آکادمی زیبایی رز", "09121001005", "شهرک غرب"),
         ],
     },
     {
         "name": "مکانیک",
-        "keywords": "مکانیک ماشین خودرو تعمیر باتری پنچری",
+        "keywords": "مکانیک ماشین خودرو تعمیر باتری پنچری تعمیرگاه امداد",
         "providers": [
-            ("تعمیرگاه آزادی", "09123333333", "آزادی"),
-            ("امداد خودرو پارس", "09124444444", "تهرانپارس"),
+            ("تعمیرگاه آزادی", "09121111001", "آزادی"),
+            ("امداد خودرو پارس", "09121111002", "تهرانپارس"),
+            ("اتوسرویس شریف", "09121111003", "صادقیه"),
+            ("تعمیرگاه بهمن", "09121111004", "جاده ساوه"),
+            ("باتری و پنچری نصر", "09121111005", "نواب"),
         ],
     },
     {
@@ -320,50 +326,96 @@ SEED_SERVICES = [
         "keywords": "اورژانس آمبولانس تصادف اورژانسی ۱۱۵ 115",
         "providers": [
             ("اورژانس ۱۱۵", "115", "سراسر شهر"),
-            ("درمانگاه شبانه‌روزی نور", "09125555555", "شریعتی"),
+            ("درمانگاه شبانه‌روزی نور", "09121222001", "شریعتی"),
+            ("اورژانس خصوصی سپهر", "09121222002", "ولیعصر"),
+            ("درمانگاه شبانه‌روزی سپید", "09121222003", "پیروزی"),
+            ("آمبولانس مهر", "09121222004", "رسالت"),
         ],
     },
     {
         "name": "پزشک",
-        "keywords": "پزشک دکتر مطب ویزیت بیمارستان نوبت",
+        "keywords": "پزشک دکتر مطب ویزیت بیمارستان نوبت درمانگاه",
         "providers": [
-            ("دکتر کریمی داخلی", "09126666666", "مطهری"),
-            ("دکتر نوری اطفال", "09127777777", "نیاوران"),
-            ("دکتر احمدی قلب", "09128888888", "جردن"),
+            ("دکتر کریمی داخلی", "09121333001", "مطهری"),
+            ("دکتر نوری اطفال", "09121333002", "نیاوران"),
+            ("دکتر احمدی قلب", "09121333003", "جردن"),
+            ("دکتر موسوی زنان", "09121333004", "زعفرانیه"),
+            ("دکتر رضایی پوست", "09121333005", "سعادت‌آباد"),
         ],
     },
     {
         "name": "لوله‌کش",
-        "keywords": "لوله لوله‌کش چکه فاضلاب سیفون",
+        "keywords": "لوله لوله‌کش لوله‌کشی چکه فاضلاب سیفون تأسیسات",
         "providers": [
-            ("تأسیسات رضایی", "09129999991", "پونک"),
+            ("تأسیسات رضایی", "09121444001", "پونک"),
+            ("لوله‌کشی آریا", "09121444002", "تهرانپارس"),
+            ("خدمات فاضلاب شهر", "09121444003", "افسریه"),
+            ("تأسیسات شبانه پاسارگاد", "09121444004", "ستارخان"),
+            ("رفع گرفتگی پایپ‌فیکس", "09121444005", "شهرری"),
         ],
     },
     {
         "name": "برقکار",
-        "keywords": "برق برقکار سیم‌کشی فیوز روشنایی",
+        "keywords": "برق برقکار سیم‌کشی فیوز روشنایی ساختمان",
         "providers": [
-            ("برق ساختمان کاظمی", "09129999992", "سعادت‌آباد"),
+            ("برق ساختمان کاظمی", "09121555001", "سعادت‌آباد"),
+            ("برق صنعتی نوران", "09121555002", "جاده مخصوص"),
+            ("سیم‌کشی خانه سبز", "09121555003", "پونک"),
+            ("رفع اتصالی فوری", "09121555004", "آزادی"),
+            ("روشنایی و تابلو برق هما", "09121555005", "شهرک اکباتان"),
         ],
     },
 ]
 
 
-def _seed_services(conn: sqlite3.Connection) -> None:
-    if conn.execute("SELECT COUNT(*) AS c FROM services").fetchone()["c"]:
-        return
+def _ensure_service_catalog(conn: sqlite3.Connection) -> None:
+    """Insert sample services/providers; add missing phones if the DB was seeded earlier."""
+    added = 0
     for svc in SEED_SERVICES:
-        cur = conn.execute(
-            "INSERT INTO services (name, keywords) VALUES (?, ?)",
-            (svc["name"], svc["keywords"]),
-        )
-        sid = int(cur.lastrowid)
+        row = conn.execute("SELECT id FROM services WHERE name = ?", (svc["name"],)).fetchone()
+        if row is None:
+            cur = conn.execute(
+                "INSERT INTO services (name, keywords) VALUES (?, ?)",
+                (svc["name"], svc["keywords"]),
+            )
+            sid = int(cur.lastrowid)
+        else:
+            sid = int(row["id"])
+            conn.execute(
+                "UPDATE services SET keywords = ? WHERE id = ?",
+                (svc["keywords"], sid),
+            )
+        have = {
+            r["phone"]
+            for r in conn.execute(
+                "SELECT phone FROM providers WHERE service_id = ?", (sid,)
+            ).fetchall()
+        }
+        have_names = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM providers WHERE service_id = ?", (sid,)
+            ).fetchall()
+        }
         for name, phone, area in svc["providers"]:
+            if name in have_names:
+                conn.execute(
+                    "UPDATE providers SET phone = ?, area = ? WHERE service_id = ? AND name = ?",
+                    (phone, area, sid, name),
+                )
+                have.add(phone)
+                continue
+            if phone in have:
+                continue
             conn.execute(
                 "INSERT INTO providers (service_id, name, phone, area) VALUES (?, ?, ?, ?)",
                 (sid, name, phone, area),
             )
-    log.info("Seeded %d service categories", len(SEED_SERVICES))
+            have.add(phone)
+            have_names.add(name)
+            added += 1
+    if added:
+        log.info("Service catalog updated (%d new providers)", added)
 
 
 def list_services(db_path: Path | None = None) -> list[dict[str, Any]]:

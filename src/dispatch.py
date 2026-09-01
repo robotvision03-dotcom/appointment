@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src import db
-from src.sms import make_tts_call, normalize_iran_mobile, send_sms
+from src.sms import make_tts_call, send_sms
 from src.utils import log
 
 
@@ -30,41 +30,45 @@ def connect_customer_to_provider(
     customer_name: str = "",
 ) -> dict[str, Any]:
     """
-    Call the provider right away. If the call cannot be placed (or we cannot
-    know they answered), send an SMS that includes the customer's number.
+    Call the seller so the customer can talk and book an appointment.
+
+    If the seller does not answer (or the call cannot be placed), SMS the
+    seller's number to the customer, and the customer's number to the seller.
     """
     provider = db.get_provider(provider_id)
     if not provider:
         return {"ok": False, "error": "سرویس‌دهنده پیدا نشد."}
 
     cust = _display_phone(customer_phone) or customer_phone
+    seller = _display_phone(provider["phone"]) or provider["phone"]
     who = customer_name.strip() or "یک مشتری"
     service = provider.get("service_name") or "سرویس"
-    sms_text = (
-        f"{who} برای «{service}» به شما نیاز دارد. "
-        f"شماره تماس مشتری: {cust}"
-    )
+
     tts_text = (
-        f"سلام. {who} برای {service} به شما نیاز دارد. "
-        f"شماره ایشان {_spoken_digits(cust) or cust} است. لطفاً تماس بگیرید."
+        f"سلام. {who} برای قرار ملاقات {service} با شما تماس می‌گیرد. "
+        f"شماره مشتری {_spoken_digits(cust) or cust} است. لطفاً گوشی را بردارید."
+    )
+    sms_to_seller = (
+        f"{who} برای قرار ملاقات «{service}» با شما کار دارد. "
+        f"شماره مشتری: {cust}"
+    )
+    sms_to_customer = (
+        f"{provider['name']} جواب نداد. برای صحبت و قرار ملاقات با ایشان تماس بگیرید: {seller}"
     )
 
     call_result = make_tts_call(provider["phone"], tts_text)
-    sms_needed = not call_result.get("ok") or call_result.get("reason") in {
-        "kavenegar_not_configured",
-        "emergency_number",
-        "invalid_number",
-    }
-    # Always leave an SMS trail so a missed TTS call still reaches the seller.
-    sms_result = send_sms(provider["phone"], sms_text)
-    if sms_result.get("reason") == "invalid_number":
-        sms_needed = True
+    no_answer = not call_result.get("ok")
+
+    seller_sms = send_sms(provider["phone"], sms_to_seller)
+    customer_sms = {"ok": False, "reason": "not_needed"}
+    if no_answer:
+        customer_sms = send_sms(cust, sms_to_customer)
 
     call_status = "placed" if call_result.get("ok") else (
         "dry_run" if call_result.get("dry_run") else f"failed:{call_result.get('reason', 'unknown')}"
     )
-    sms_status = "sent" if sms_result.get("ok") else (
-        "dry_run" if sms_result.get("dry_run") else f"failed:{sms_result.get('reason', 'unknown')}"
+    sms_status = (
+        f"seller:{_sms_label(seller_sms)};customer:{_sms_label(customer_sms)}"
     )
     req_id = db.save_service_request(
         customer_name=customer_name,
@@ -80,21 +84,32 @@ def connect_customer_to_provider(
         call_status,
         sms_status,
     )
-    provider_tel = "".join(c for c in provider["phone"] if c.isdigit() or c == "+")
+    provider_tel = "".join(c for c in seller if c.isdigit() or c == "+")
     customer_tel = "".join(c for c in cust if c.isdigit() or c == "+")
     return {
         "ok": True,
         "request_id": req_id,
         "provider": provider,
         "customer_phone": cust,
+        "provider_phone": seller,
         "call": call_result,
-        "sms": sms_result,
-        "sms_on_no_answer": True,
+        "sms": seller_sms,
+        "sms_to_seller": seller_sms,
+        "sms_to_customer": customer_sms,
+        "sms_on_no_answer": no_answer,
         "call_attempted": not call_result.get("dry_run"),
         "tel_provider": f"tel:{provider_tel}",
         "tel_customer": f"tel:{customer_tel}" if customer_tel else "",
-        "fallback_sms": sms_needed or not call_result.get("ok"),
+        "fallback_sms": no_answer,
     }
+
+
+def _sms_label(result: dict[str, Any]) -> str:
+    if result.get("ok"):
+        return "sent"
+    if result.get("dry_run"):
+        return "dry_run"
+    return str(result.get("reason") or "skipped")
 
 
 def format_provider_list(service_id: int) -> str:
@@ -103,6 +118,6 @@ def format_provider_list(service_id: int) -> str:
         return "برای این سرویس هنوز ارائه‌دهنده‌ای ثبت نشده است."
     parts = []
     for i, p in enumerate(providers, start=1):
-        area = f" — {p['area']}" if p.get("area") else ""
-        parts.append(f"{i}) {p['name']}{area}")
-    return "، ".join(parts)
+        area = f"، {p['area']}" if p.get("area") else ""
+        parts.append(f"{i}) {p['name']}{area} — {p['phone']}")
+    return "؛ ".join(parts)
