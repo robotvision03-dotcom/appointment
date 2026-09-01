@@ -78,6 +78,18 @@ def test_handoff_click_to_call():
     assert out["tel_url"].startswith("tel:")
 
 
+def test_patient_name_not_confused_with_doctor(isolated_db, monkeypatch):
+    monkeypatch.setattr("src.call_manager.llm.is_available", lambda: False)
+    sid = "name-vs-doctor"
+    call_manager.end_call(sid)
+    call_manager.start_call(sid)
+    r = call_manager.handle_user_text(sid, "علی رضایی")
+    assert r["patient_info"]["patient_name"] == "علی رضایی"
+    assert "doctor_id" not in r["patient_info"]
+    r = call_manager.handle_user_text(sid, "دکتر کریمی")
+    assert r["patient_info"]["doctor_name"] == "دکتر کریمی"
+
+
 def test_full_booking_dialogue(isolated_db, monkeypatch):
     monkeypatch.setattr("src.call_manager.llm.is_available", lambda: False)
     sid = "unit-call"

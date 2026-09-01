@@ -140,18 +140,34 @@ def get_doctor(doctor_id: int, db_path: Path | None = None) -> dict[str, Any] | 
     return _row_to_dict(row)
 
 
-def find_doctor_by_name(name: str, db_path: Path | None = None) -> dict[str, Any] | None:
-    """Match a spoken doctor name against the roster (substring, specialty, last name)."""
+def find_doctor_by_name(
+    name: str,
+    db_path: Path | None = None,
+    *,
+    strict: bool = False,
+) -> dict[str, Any] | None:
+    """Match a spoken doctor. strict=True avoids treating a patient name like علی رضایی as دکتر رضایی."""
     if not name:
         return None
-    needle = name.replace("دکتر", "").replace("دکتر ", "").strip()
+    raw = name.replace("ي", "ی")
+    titled = "دکتر" in raw or "doct" in raw.lower()
+    tokens = [t for t in raw.replace("دکتر", " ").split() if len(t) >= 2]
     doctors = list_doctors(db_path)
+
     for doc in doctors:
-        hay = f"{doc['name']} {doc['specialty']}"
-        if needle and needle in hay:
+        spec = (doc.get("specialty") or "").strip()
+        if spec and len(spec) >= 3 and spec in raw:
             return doc
+
+    for doc in doctors:
         last = doc["name"].replace("دکتر", "").strip()
-        if last and last in name:
+        if not last:
+            continue
+        if last not in tokens and last not in raw:
+            continue
+        if titled or raw.strip() in {last, doc["name"], f"دکتر {last}"}:
+            return doc
+        if not strict and last in tokens and len(tokens) <= 4:
             return doc
     return None
 

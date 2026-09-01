@@ -158,21 +158,45 @@ class CallManager:
     def _merge_extracted(self, state: CallState, extracted: dict[str, Any]) -> None:
         info = state.patient_info
         name = extracted.get("patient_name")
-        if name:
-            info["patient_name"] = str(name).strip()
+        if name and not info.get("patient_name"):
+            cleaned = str(name).strip()
+            if cleaned and "دکتر" not in cleaned:
+                info["patient_name"] = cleaned
         doctor_name = extracted.get("doctor_name") or extracted.get("doctor")
-        if doctor_name:
-            doc = db.find_doctor_by_name(str(doctor_name))
+        if doctor_name and not info.get("doctor_id"):
+            doc = db.find_doctor_by_name(str(doctor_name), strict=False)
             if doc:
                 info["doctor_id"] = doc["id"]
                 info["doctor_name"] = doc["name"]
                 info["specialty"] = doc["specialty"]
         date_val = extracted.get("date")
-        if date_val:
+        if date_val and not info.get("date"):
             info["date"] = str(date_val)
         time_val = extracted.get("time")
-        if time_val:
+        if time_val and not info.get("time"):
             info["time"] = str(time_val)
+
+    def _ingest(self, state: CallState, text: str) -> None:
+        """Fill every field this utterance contains. Never overwrite a filled slot."""
+        info = state.patient_info
+        if not info.get("doctor_id"):
+            doc = db.find_doctor_by_name(text, strict=not bool(info.get("patient_name")))
+            if doc:
+                info["doctor_id"] = doc["id"]
+                info["doctor_name"] = doc["name"]
+                info["specialty"] = doc["specialty"]
+        if not info.get("patient_name"):
+            name = _guess_name(text)
+            if name:
+                info["patient_name"] = name
+        if not info.get("date"):
+            parsed = parse_relative_date(text)
+            if parsed:
+                info["date"] = parsed
+        if not info.get("time"):
+            parsed_time = parse_time(text)
+            if parsed_time:
+                info["time"] = parsed_time
 
     def _advance_machine(
         self,
@@ -182,162 +206,95 @@ class CallManager:
         prefer_llm: bool = False,
     ) -> dict[str, Any]:
         info = state.patient_info
-        phase = state.phase
+        self._ingest(state, text)
 
-        if phase in (PHASE_GREETING, PHASE_ASK_NAME) or not info.get("patient_name"):
-            if phase == PHASE_GREETING:
-                state.phase = PHASE_ASK_NAME
-            name = _guess_name(text)
-            if name:
-                info["patient_name"] = name
-                state.phase = PHASE_ASK_DOCTOR
-                canned = (
-                    f"سپاس {name}. {ASK_DOCTOR} "
-                    f"پزشکان کلینیک: {_doctor_names()}."
-                )
-                reply = _pick_reply(canned, llm_reply, prefer_llm)
-                self.update_context(state.call_sid, text, reply)
-                return self._result(state, reply, "continue")
-            reply = _pick_reply(
-                "لطفاً نام و نام خانوادگی خود را کامل بفرمایید.",
-                llm_reply,
-                prefer_llm,
-            )
-            self.update_context(state.call_sid, text, reply)
-            return self._result(state, reply, "continue")
-
-        if phase == PHASE_ASK_DOCTOR or not info.get("doctor_id"):
-            doc = db.find_doctor_by_name(text)
-            if doc:
-                info["doctor_id"] = doc["id"]
-                info["doctor_name"] = doc["name"]
-                info["specialty"] = doc["specialty"]
-                state.phase = PHASE_ASK_DATE
-                canned = (
-                    f"{doc['name']}، تخصص {doc['specialty']}، ثبت شد. {ASK_DATE}"
-                )
-                reply = _pick_reply(canned, llm_reply, prefer_llm)
-                self.update_context(state.call_sid, text, reply)
-                return self._result(state, reply, "continue")
-            reply = _pick_reply(
-                f"این نام در فهرست پزشکان نیست. لطفاً یکی از این همکاران را بفرمایید: {_doctor_names()}.",
-                llm_reply,
-                prefer_llm,
-            )
-            self.update_context(state.call_sid, text, reply)
-            return self._result(state, reply, "continue")
-
-        if phase == PHASE_ASK_DATE or not info.get("date"):
-            parsed = parse_relative_date(text)
-            if parsed:
-                info["date"] = parsed
-                state.phase = PHASE_ASK_TIME
-                slots = db.get_available_slots(info["doctor_id"], parsed)
-                if not slots:
-                    reply = (
-                        f"در تاریخ {parsed} ظرفیت خالی برای {info['doctor_name']} نداریم. "
-                        "روز دیگری پیشنهاد می‌کنید؟"
-                    )
-                    info.pop("date", None)
-                    state.phase = PHASE_ASK_DATE
-                else:
-                    shown = "، ".join(slots[:6])
-                    canned = (
-                        f"برای تاریخ {parsed} این ساعات آزاد است: {shown}. {ASK_TIME}"
-                    )
-                    reply = _pick_reply(canned, llm_reply, prefer_llm)
-                self.update_context(state.call_sid, text, reply)
-                return self._result(state, reply, "continue")
-            reply = _pick_reply(
-                "تاریخ را درست متوجه نشدم. مثلاً بفرمایید فردا، پس‌فردا، یا ۱۴۰۳/۰۶/۱۵.",
-                llm_reply,
-                prefer_llm,
-            )
-            self.update_context(state.call_sid, text, reply)
-            return self._result(state, reply, "continue")
-
-        if phase == PHASE_ASK_TIME or not info.get("time"):
-            parsed_time = parse_time(text)
-            if parsed_time:
-                if not db.is_slot_free(info["doctor_id"], info["date"], parsed_time):
-                    slots = db.get_available_slots(info["doctor_id"], info["date"])
-                    reply = (
-                        f"ساعت {parsed_time} قبلاً رزرو شده است. "
-                        f"ساعات آزاد: {'، '.join(slots[:8]) or 'در این روز ظرفیتی نمانده'}."
-                    )
-                    self.update_context(state.call_sid, text, reply)
-                    return self._result(state, reply, "continue")
-                info["time"] = parsed_time
-                state.phase = PHASE_CONFIRM
-                canned = (
-                    f"جمع‌بندی نوبت: {info.get('patient_name', '')}، "
-                    f"{info['doctor_name']}، تاریخ {info['date']}، ساعت {info['time']}. "
-                    "اگر موافقید بفرمایید بله تا ثبت شود."
-                )
-                reply = _pick_reply(canned, llm_reply, prefer_llm)
-                self.update_context(state.call_sid, text, reply)
-                return self._result(state, reply, "continue")
-            reply = _pick_reply(
-                "ساعت را متوجه نشدم. مثلاً بفرمایید ساعت ده صبح یا ۱۴:۳۰.",
-                llm_reply,
-                prefer_llm,
-            )
-            self.update_context(state.call_sid, text, reply)
-            return self._result(state, reply, "continue")
-
-        if phase == PHASE_CONFIRM:
-            if is_yes(text):
-                try:
-                    appt_id = db.book_appointment(
-                        patient_name=info.get("patient_name", "ناشناس"),
-                        phone=state.from_number or info.get("phone", ""),
-                        doctor_id=int(info["doctor_id"]),
-                        date=info["date"],
-                        time=info["time"],
-                    )
-                except ValueError as exc:
-                    state.phase = PHASE_ASK_TIME
-                    info.pop("time", None)
-                    reply = f"{exc} لطفاً ساعت دیگری انتخاب کنید."
-                    self.update_context(state.call_sid, text, reply)
-                    return self._result(state, reply, "continue")
-                except Exception as exc:  # noqa: BLE001
-                    log.error("DB book failed: %s", exc)
-                    reply = APOLOGY_DB
-                    self.update_context(state.call_sid, text, reply)
-                    return self._result(state, reply, "continue")
-                state.appointment_id = appt_id
-                state.phase = PHASE_BOOKED
-                reply = (
-                    f"نوبت شما با شماره پیگیری {appt_id} برای {info['doctor_name']} "
-                    f"در تاریخ {info['date']} ساعت {info['time']} ثبت شد. "
-                    "موفق و سلامت باشید."
-                )
-                self.update_context(state.call_sid, text, reply)
-                return self._result(state, reply, "book")
-            if is_no(text):
-                state.phase = PHASE_ASK_DATE
-                info.pop("date", None)
-                info.pop("time", None)
-                reply = "در خدمتیم. تاریخ دیگری را بفرمایید تا نوبت را از نو تنظیم کنیم."
-                self.update_context(state.call_sid, text, reply)
-                return self._result(state, reply, "continue")
-            reply = _pick_reply(
-                "برای ثبت نهایی لطفاً «بله» یا «خیر» بفرمایید.",
-                llm_reply,
-                prefer_llm,
-            )
-            self.update_context(state.call_sid, text, reply)
-            return self._result(state, reply, "continue")
-
-        if phase in (PHASE_BOOKED, PHASE_DONE):
+        if state.phase in (PHASE_BOOKED, PHASE_DONE):
             reply = "نوبت شما ثبت شده است. اگر موضوع دیگری نیست، می‌توانید گفتگو را پایان دهید."
             self.update_context(state.call_sid, text, reply)
             return self._result(state, reply, "continue")
 
-        reply = llm_reply or ASK_REPEAT
+        missing = _missing_slot(info)
+        if missing is None:
+            if is_yes(text):
+                return self._book_or_fail(state, text)
+            if is_no(text):
+                info.pop("date", None)
+                info.pop("time", None)
+                state.phase = PHASE_ASK_DATE
+                reply = "بسیار خب. تاریخ دیگری را بفرمایید."
+                self.update_context(state.call_sid, text, reply)
+                return self._result(state, reply, "continue")
+            if info.get("doctor_id") and info.get("date") and info.get("time"):
+                if not db.is_slot_free(int(info["doctor_id"]), info["date"], info["time"]):
+                    slots = db.get_available_slots(int(info["doctor_id"]), info["date"])
+                    info.pop("time", None)
+                    state.phase = PHASE_ASK_TIME
+                    reply = (
+                        f"آن ساعت در دسترس نیست. ساعات آزاد: "
+                        f"{'، '.join(slots[:8]) or 'ظرفیتی در این روز نمانده'}."
+                    )
+                    self.update_context(state.call_sid, text, reply)
+                    return self._result(state, reply, "continue")
+            if state.phase == PHASE_CONFIRM:
+                reply = "برای ثبت نهایی لطفاً «بله» یا «خیر» بفرمایید."
+                self.update_context(state.call_sid, text, reply)
+                return self._result(state, reply, "continue")
+            state.phase = PHASE_CONFIRM
+            reply = (
+                f"خلاصه نوبت: {info.get('patient_name')}، {info.get('doctor_name')}، "
+                f"{info.get('date')} ساعت {info.get('time')}. برای ثبت نهایی بفرمایید بله."
+            )
+            self.update_context(state.call_sid, text, reply)
+            return self._result(state, reply, "continue")
+
+        if missing == "date" and info.get("doctor_id") and info.get("date"):
+            slots = db.get_available_slots(int(info["doctor_id"]), info["date"])
+            if not slots:
+                info.pop("date", None)
+                missing = "date"
+
+        state.phase = {
+            "name": PHASE_ASK_NAME,
+            "doctor": PHASE_ASK_DOCTOR,
+            "date": PHASE_ASK_DATE,
+            "time": PHASE_ASK_TIME,
+        }[missing]
+        canned = _question_for(missing, info)
+        # Do not reuse an LLM line that would re-ask a filled field.
+        reply = canned
         self.update_context(state.call_sid, text, reply)
         return self._result(state, reply, "continue")
+
+    def _book_or_fail(self, state: CallState, text: str) -> dict[str, Any]:
+        info = state.patient_info
+        try:
+            appt_id = db.book_appointment(
+                patient_name=info.get("patient_name", "ناشناس"),
+                phone=state.from_number or info.get("phone", ""),
+                doctor_id=int(info["doctor_id"]),
+                date=info["date"],
+                time=info["time"],
+            )
+        except ValueError as exc:
+            state.phase = PHASE_ASK_TIME
+            info.pop("time", None)
+            reply = f"{exc} لطفاً ساعت دیگری انتخاب کنید."
+            self.update_context(state.call_sid, text, reply)
+            return self._result(state, reply, "continue")
+        except Exception as exc:  # noqa: BLE001
+            log.error("DB book failed: %s", exc)
+            reply = APOLOGY_DB
+            self.update_context(state.call_sid, text, reply)
+            return self._result(state, reply, "continue")
+        state.appointment_id = appt_id
+        state.phase = PHASE_BOOKED
+        reply = (
+            f"نوبت شما با شماره پیگیری {appt_id} برای {info['doctor_name']} "
+            f"در تاریخ {info['date']} ساعت {info['time']} ثبت شد. "
+            "موفق و سلامت باشید."
+        )
+        self.update_context(state.call_sid, text, reply)
+        return self._result(state, reply, "book")
 
     def transfer_summary(self, call_sid: str) -> str:
         state = self.get(call_sid)
@@ -379,17 +336,69 @@ def _doctors_prompt() -> str:
     return "\n".join(lines) or "لیست پزشک خالی است."
 
 
+_NAME_STOP = {
+    "امروز",
+    "فردا",
+    "پس‌فردا",
+    "پسفردا",
+    "ساعت",
+    "بله",
+    "خیر",
+    "صبح",
+    "عصر",
+    "شب",
+    "دکتر",
+    "نوبت",
+    "ویزیت",
+    "می‌خواهم",
+    "میخوام",
+}
+
+
 def _guess_name(text: str) -> str | None:
     t = normalize_persian(text)
-    for prefix in ("اسمم", "نام من", "من", "هستم"):
+    if "دکتر" in t:
+        return None
+    if parse_relative_date(t) and len(t.split()) <= 2:
+        return None
+    if parse_time(t) and len(t.split()) <= 4:
+        return None
+    for prefix in ("اسمم", "نام من", "نامم", "هستم"):
         t = t.replace(prefix, " ")
     t = t.replace("هستم", "").strip()
-    parts = [p for p in t.split() if p not in {"است", "هست", "می‌باشد"}]
+    parts = [p for p in t.split() if p not in _NAME_STOP and p not in {"است", "هست", "من"}]
     if len(parts) >= 2 and all(len(p) >= 2 for p in parts[:3]):
         return " ".join(parts[:4])
     if len(parts) == 1 and len(parts[0]) >= 3:
         return parts[0]
     return None
+
+
+def _missing_slot(info: dict) -> str | None:
+    if not info.get("patient_name"):
+        return "name"
+    if not info.get("doctor_id"):
+        return "doctor"
+    if not info.get("date"):
+        return "date"
+    if not info.get("time"):
+        return "time"
+    return None
+
+
+def _question_for(missing: str, info: dict) -> str:
+    if missing == "name":
+        return "لطفاً نام و نام خانوادگی خود را کامل بفرمایید."
+    if missing == "doctor":
+        who = info.get("patient_name") or "شما"
+        return f"{who}، نوبت کدام پزشک را می‌خواهید؟ {_doctor_names()}."
+    if missing == "date":
+        return f"{info.get('doctor_name')} ثبت شد. {ASK_DATE}"
+    if missing == "time":
+        slots = db.get_available_slots(int(info["doctor_id"]), info["date"])
+        shown = "، ".join(slots[:6]) or "ظرفیتی نیست"
+        return f"برای تاریخ {info['date']} ساعات آزاد: {shown}. {ASK_TIME}"
+    return ASK_REPEAT
 
 
 def _needs_llm(state: CallState, text: str) -> bool:
@@ -402,7 +411,9 @@ def _needs_llm(state: CallState, text: str) -> bool:
     info = state.patient_info
     if (phase in (PHASE_GREETING, PHASE_ASK_NAME) or not info.get("patient_name")) and _guess_name(text):
         return False
-    if (phase == PHASE_ASK_DOCTOR or not info.get("doctor_id")) and db.find_doctor_by_name(text):
+    if (phase == PHASE_ASK_DOCTOR or not info.get("doctor_id")) and db.find_doctor_by_name(
+        text, strict=not bool(info.get("patient_name"))
+    ):
         return False
     if (phase == PHASE_ASK_DATE or not info.get("date")) and parse_relative_date(text):
         return False
