@@ -8,10 +8,10 @@ from datetime import date, datetime
 from typing import Any
 
 from src import db
-from src.cars import match_car, parse_km, parse_year
 from src.config import config
 from src.jalali import format_jalali
 from src.sms import extract_iran_mobile
+from src.understand import understand
 from src.utils import is_yes, log, normalize_persian, parse_relative_date, parse_time
 
 PHASE_ASK_TYPE = "ask_type"
@@ -155,7 +155,8 @@ class CallManager:
         return self._on_type(state, text)
 
     def _on_type(self, state: CallState, text: str) -> dict[str, Any]:
-        car = match_car(text)
+        u = understand(text, PHASE_ASK_TYPE, state.patient_info)
+        car = u.get("car")
         if not car:
             return self._reply(
                 state,
@@ -167,10 +168,11 @@ class CallManager:
         if car.get("model"):
             info["model"] = car["model"]
             state.phase = PHASE_ASK_YEAR
+            hint = f" (از گفتهٔ «{u.get('heard')}»)" if u.get("corrected") else ""
             return self._reply(
                 state,
                 text,
-                f"{car['make']} {car['model']} ثبت شد. مدل یا سال ساخت آن چند است؟",
+                f"{car['make']} {car['model']} ثبت شد{hint}. مدل یا سال ساخت آن چند است؟",
             )
         state.phase = PHASE_ASK_MODEL
         return self._reply(
@@ -180,13 +182,14 @@ class CallManager:
         )
 
     def _on_model(self, state: CallState, text: str) -> dict[str, Any]:
-        car = match_car(text)
+        u = understand(text, PHASE_ASK_MODEL, state.patient_info)
+        car = u.get("car")
         info = state.patient_info
         if car and car.get("model"):
             info["make"] = car["make"] or info.get("make")
             info["model"] = car["model"]
         else:
-            info["model"] = text
+            info["model"] = u.get("text") or text
         state.phase = PHASE_ASK_YEAR
         return self._reply(
             state,
@@ -195,7 +198,8 @@ class CallManager:
         )
 
     def _on_year(self, state: CallState, text: str) -> dict[str, Any]:
-        year = parse_year(text)
+        u = understand(text, PHASE_ASK_YEAR, state.patient_info)
+        year = u.get("year")
         if not year:
             return self._reply(state, text, "سال ساخت را عددی بگویید. مثلاً ۱۳۹۹ یا ۲۰۱۸.")
         state.patient_info["year"] = year
@@ -203,7 +207,8 @@ class CallManager:
         return self._reply(state, text, "چند کیلومتر کار کرده است؟")
 
     def _on_km(self, state: CallState, text: str) -> dict[str, Any]:
-        km = parse_km(text)
+        u = understand(text, PHASE_ASK_KM, state.patient_info)
+        km = u.get("km")
         if km is None:
             return self._reply(state, text, "کارکرد را به کیلومتر بگویید. مثلاً ۸۰ هزار.")
         state.patient_info["km"] = km

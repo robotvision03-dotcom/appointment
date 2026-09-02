@@ -15,6 +15,7 @@ from src import db
 from src.call_manager import call_manager
 from src.cars import match_car, parse_km, parse_year
 from src.jalali import from_jalali, gregorian_to_jalali, to_jalali
+from src.lexicon import resolve_car
 from src.stt import _pcm16_to_float32, _prepare_waveform, _sherpa_text
 
 
@@ -61,6 +62,18 @@ def test_match_peugeot_pars():
     only_make = match_car("پژو")
     assert only_make["make"] == "پژو"
     assert not only_make["model"]
+
+
+def test_lexicon_fixes_asr_fragments():
+    samand = resolve_car("سمن")
+    assert samand is not None
+    assert "سمند" in (samand.get("model") or "")
+    pars = resolve_car("پرس")
+    assert pars is not None
+    assert pars["model"] == "پارس"
+    pride = resolve_car("پرا")
+    assert pride is not None
+    assert pride["model"] == "پراید"
 
 
 def test_parse_year_and_km():

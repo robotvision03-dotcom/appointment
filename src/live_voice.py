@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 from fastapi import WebSocket, WebSocketDisconnect
 
 from src.call_manager import PHASE_ASK_TYPE, call_manager
 from src.config import config
 from src.handoff import start_warm_transfer
+from src.hearing import speech_onset, update_noise_floor
 from src.sms import send_booking_sms
 from src.stt import stt
+from src.understand import understand
 from src.utils import log, pcm16_rms
 
 FRAME_MS_ESTIMATE = 30  # ~480 samples at 16 kHz
@@ -33,6 +36,9 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
     pcm_buffer = bytearray()
     preroll = bytearray()
     sample_rate = config.stt_sample_rate
+    noise_floor = 28.0
+    peak_energy = 0.0
+    last_empty_notice = 0.0
 
     log.info("Browser voice WebSocket connected")
 
@@ -100,12 +106,22 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                 duration_ms = int(1000 * (len(pcm) // 2) / sample_rate) or FRAME_MS_ESTIMATE
                 preroll_cap = sample_rate * 2 // 3  # ~300 ms
                 max_bytes = sample_rate * 2 * 12
+                noise_floor = update_noise_floor(noise_floor, float(energy), speech_started)
+                loud = speech_onset(float(energy), noise_floor, float(config.energy_threshold))
 
-                if energy >= config.energy_threshold:
+                if loud:
                     if not speech_started:
                         pcm_buffer = bytearray(preroll)
                         speech_started = True
+                        peak_energy = float(energy)
+                        log.info(
+                            "Hearing onset energy=%s floor=%.1f sid=%s",
+                            energy,
+                            noise_floor,
+                            call_sid,
+                        )
                     pcm_buffer.extend(pcm)
+                    peak_energy = max(peak_energy, float(energy))
                     if len(pcm_buffer) > max_bytes:
                         del pcm_buffer[: len(pcm_buffer) - max_bytes]
                     voiced_ms += duration_ms
@@ -127,6 +143,9 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                             speech_started = False
                             silence_ms = 0
                             voiced_ms = 0
+                            if peak_energy < max(config.energy_threshold, noise_floor * 2.5):
+                                peak_energy = 0.0
+                                continue
                             await websocket.send_json(
                                 {"event": "dictation", "text": "…", "hearing": True}
                             )
@@ -134,24 +153,41 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                                 stt.transcribe, chunk, sample_rate
                             )
                             if transcript:
-                                await websocket.send_json(
-                                    {"event": "dictation", "text": transcript}
+                                state = call_manager.get(call_sid)
+                                phase = state.phase if state else PHASE_ASK_TYPE
+                                info = state.patient_info if state else {}
+                                understood = await asyncio.to_thread(
+                                    understand, transcript, phase, info
                                 )
-                                await _handle_utterance(websocket, call_sid, transcript)
+                                shown = transcript
+                                canonical = understood.get("text") or transcript
+                                if canonical != transcript:
+                                    shown = f"{transcript} → {canonical}"
+                                await websocket.send_json(
+                                    {"event": "dictation", "text": canonical}
+                                )
+                                await _handle_utterance(
+                                    websocket, call_sid, canonical, echo_text=shown
+                                )
                             else:
                                 log.info(
-                                    "STT empty sid=%s bytes=%s rate=%s last_rms=%s",
+                                    "STT empty sid=%s bytes=%s rate=%s last_rms=%s peak=%.0f",
                                     call_sid,
                                     len(chunk),
                                     sample_rate,
                                     energy,
+                                    peak_energy,
                                 )
-                                await websocket.send_json(
-                                    {
-                                        "event": "status",
-                                        "message": "شنیده نشد. نزدیک‌تر و واضح بگویید، یا در کادر بنویسید.",
-                                    }
-                                )
+                                now = time.monotonic()
+                                if now - last_empty_notice > 8:
+                                    last_empty_notice = now
+                                    await websocket.send_json(
+                                        {
+                                            "event": "status",
+                                            "message": "هنوز گفتار واضحی نبود. پس از صدای کلام، نام خودرو را بگویید.",
+                                        }
+                                    )
+                            peak_energy = 0.0
 
     except WebSocketDisconnect:
         log.info("Browser voice disconnected %s", call_sid)
@@ -160,10 +196,14 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
 
 
 async def _handle_utterance(
-    websocket: WebSocket, call_sid: str, text: str, echo_user: bool = True
+    websocket: WebSocket,
+    call_sid: str,
+    text: str,
+    echo_user: bool = True,
+    echo_text: str | None = None,
 ) -> None:
     if echo_user:
-        await websocket.send_json({"event": "user", "text": text})
+        await websocket.send_json({"event": "user", "text": echo_text or text})
     result = await asyncio.to_thread(call_manager.handle_user_text, call_sid, text)
     if result.get("intent") == "book":
         await asyncio.to_thread(send_booking_sms, call_sid)

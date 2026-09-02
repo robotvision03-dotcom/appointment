@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from src.config import config
+from src.hearing import prepare_for_asr
 from src.utils import log
 
 
@@ -38,29 +39,7 @@ def _sherpa_text(raw) -> str:
 
 
 def _prepare_waveform(audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
-    """Trim silence and raise gain so quiet laptop mics still reach Shenava."""
-    wave = np.ascontiguousarray(audio, dtype=np.float32).ravel()
-    if wave.size == 0:
-        return wave
-    frame = max(1, int(0.02 * sample_rate))
-    n_frames = max(1, wave.size // frame)
-    energies = np.sqrt(
-        np.mean(np.square(wave[: n_frames * frame].reshape(n_frames, frame)), axis=1)
-    )
-    peak = float(np.max(energies)) if energies.size else 0.0
-    gate = max(0.004, peak * 0.15)
-    voiced = np.flatnonzero(energies >= gate)
-    if voiced.size:
-        start = int(voiced[0] * frame)
-        end = int(min(wave.size, (voiced[-1] + 1) * frame))
-        pad = int(0.05 * sample_rate)
-        wave = wave[max(0, start - pad) : min(wave.size, end + pad)]
-    rms = float(np.sqrt(np.mean(np.square(wave)))) if wave.size else 0.0
-    if rms > 1e-6:
-        wave = wave * min(0.08 / rms, 8.0)
-        np.clip(wave, -0.99, 0.99, out=wave)
-    pad = np.zeros(int(0.3 * sample_rate), dtype=np.float32)
-    return np.concatenate([wave, pad])
+    return prepare_for_asr(audio, sample_rate)
 
 
 class ShenavaSTT:
@@ -192,13 +171,6 @@ class ShenavaSTT:
                 stream.accept_waveform(16000, waveform)
                 self._recognizer.decode_stream(stream)
                 text = _sherpa_text(stream.result)
-            if text:
-                from src import db
-
-                snapped = db.snap_heard_text(text)
-                if snapped != text:
-                    log.info("STT snapped %r -> %r", text, snapped)
-                    text = snapped
             log.info(
                 "STT transcript=%r samples=%s rms=%.4f head=%s in_rate=%s",
                 text,

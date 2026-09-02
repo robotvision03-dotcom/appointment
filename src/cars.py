@@ -8,7 +8,7 @@ from src.utils import normalize_persian
 
 # (make, model, extra keywords)
 CATALOG: list[tuple[str, str, str]] = [
-    ("پژو", "پارس", "پارس ELX پارس سال peugeot pars"),
+    ("پژو", "پارس", "پارس ELX پارس سال peugeot pars پرشیا"),
     ("پژو", "۴۰۵", "405 جی ال ایکس GLX"),
     ("پژو", "۲۰۶", "206 تیپ"),
     ("پژو", "۲۰۶ صندوق‌دار", "206 SD صندوقدار"),

@@ -103,10 +103,10 @@ class PersianLLM:
             "messages": messages,
             "stream": False,
             "format": "json",
-            "options": {"temperature": 0.2, "num_predict": 220, "top_p": 0.9},
+            "options": {"temperature": 0.0, "num_predict": 80, "top_p": 0.5},
         }
         try:
-            with self._client() as client:
+            with self._client(timeout=12.0) as client:
                 resp = client.post(f"{self.url}/api/chat", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
