@@ -222,6 +222,7 @@ async def _handle_utterance(
             "appointment_id": result.get("appointment_id"),
             "connect": result.get("connect"),
             "providers": result.get("providers"),
+            "patient_info": result.get("patient_info"),
         },
     )
 

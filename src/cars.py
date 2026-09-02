@@ -160,18 +160,30 @@ def models_for(make: str) -> list[str]:
 
 
 def parse_year(text: str) -> str | None:
-    t = normalize_persian(text)
+    """Extract a Shamsi or Gregorian model year. Do not treat mileage as a year."""
     import re
 
-    nums = [int(x) for x in re.findall(r"\d{2,4}", t)]
-    for n in nums:
-        if 1370 <= n <= 1410:
-            return str(n)
+    t = normalize_persian(text)
+    looks_like_km = bool(re.search(r"کیلومتر|کارکرد|(?<!\d)\d{1,3}\s*هزار|هزار\s*کیلومتر", t))
+
+    m4 = re.search(r"(13[7-9]\d|14[0-1]\d)", t)
+    if m4:
+        return m4.group(1)
+    m_g = re.search(r"(19[89]\d|20[0-2]\d)", t)
+    if m_g:
+        n = int(m_g.group(1))
         if 1990 <= n <= 2027:
             return str(n)
+    if looks_like_km:
+        return None
+
+    m_named = re.search(r"(?:مدل|سال)\s*(\d{2})(?!\d)", t)
+    m2 = m_named or re.search(r"(?<!\d)(\d{2})(?!\d)", t)
+    if m2:
+        n = int(m2.group(1))
         if 70 <= n <= 99:
             return str(1300 + n)
-        if 0 <= n <= 20:
+        if 0 <= n <= 6:
             return str(1400 + n)
     return None
 

@@ -8,6 +8,7 @@ from datetime import date, datetime
 from typing import Any
 
 from src import db
+from src.cars import parse_km
 from src.config import config
 from src.jalali import format_jalali
 from src.sms import extract_iran_mobile
@@ -201,8 +202,19 @@ class CallManager:
         u = understand(text, PHASE_ASK_YEAR, state.patient_info)
         year = u.get("year")
         if not year:
+            km = parse_km(text)
+            if km is not None and km >= 1000:
+                state.patient_info["km"] = km
+                return self._reply(
+                    state,
+                    text,
+                    "این عدد را به‌عنوان کارکرد ثبت کردم. سال ساخت را جدا بگویید؛ مثلاً ۱۳۹۹.",
+                )
             return self._reply(state, text, "سال ساخت را عددی بگویید. مثلاً ۱۳۹۹ یا ۲۰۱۸.")
         state.patient_info["year"] = year
+        if state.patient_info.get("km"):
+            state.phase = PHASE_ASK_NAME
+            return self._reply(state, text, "نام و نام خانوادگی شما چیست؟")
         state.phase = PHASE_ASK_KM
         return self._reply(state, text, "چند کیلومتر کار کرده است؟")
 

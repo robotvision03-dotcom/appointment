@@ -79,6 +79,9 @@ def test_lexicon_fixes_asr_fragments():
 def test_parse_year_and_km():
     assert parse_year("مدل ۱۳۹۹") == "1399"
     assert parse_year("۲۰۱۸") == "2018"
+    assert parse_year("۹۹") == "1399"
+    assert parse_year("۸۰ هزار") is None
+    assert parse_year("مدل ۱۳۹۹ کارکرد ۸۰ هزار") == "1399"
     assert parse_km("۸۰ هزار") == 80000
     assert parse_km("120000") == 120000
 
@@ -131,7 +134,9 @@ def test_full_car_booking_dialogue(isolated_db):
     assert r["patient_info"]["make"] == "پژو"
     r = call_manager.handle_user_text(sid, "۱۳۹۹")
     assert r["phase"] == "ask_km"
+    assert r["patient_info"]["year"] == "1399"
     r = call_manager.handle_user_text(sid, "هشتاد هزار")
+    assert r["patient_info"]["km"] == 80000
     assert r["phase"] == "ask_name"
     r = call_manager.handle_user_text(sid, "علی رضایی")
     assert r["phase"] == "ask_slot"
@@ -144,3 +149,17 @@ def test_full_car_booking_dialogue(isolated_db):
     rows = db.list_inspections(isolated_db)
     assert rows[0]["seller_name"] == "علی رضایی"
     assert rows[0]["make"] == "پژو"
+
+
+def test_mileage_during_year_question_is_not_year(isolated_db):
+    sid = "year-km-mix"
+    call_manager.end_call(sid)
+    call_manager.start_call(sid)
+    call_manager.handle_user_text(sid, "پژو پارس")
+    r = call_manager.handle_user_text(sid, "۸۰ هزار")
+    assert r["phase"] == "ask_year"
+    assert r["patient_info"].get("year") in (None, "")
+    assert r["patient_info"]["km"] == 80000
+    r = call_manager.handle_user_text(sid, "۱۳۹۹")
+    assert r["patient_info"]["year"] == "1399"
+    assert r["phase"] == "ask_name"

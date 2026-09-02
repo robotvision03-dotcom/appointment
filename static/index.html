@@ -271,6 +271,22 @@
     let selectedTime = null;
     let lastInfo = {};
 
+    function fillForm(info) {
+      if (!info) return;
+      lastInfo = Object.assign({}, lastInfo, info);
+      const set = (id, v) => {
+        if (v === undefined || v === null || v === "") return;
+        const el = document.getElementById(id);
+        if (el) el.value = String(v);
+      };
+      set("qb-make", info.make);
+      set("qb-model", info.model);
+      set("qb-year", info.year);
+      set("qb-km", info.km);
+      set("qb-name", info.seller_name || info.patient_name || info.name);
+      set("qb-phone", info.phone);
+    }
+
     function addMsg(role, text, meta) {
       const div = document.createElement("div");
       div.className = "msg " + role;
@@ -305,12 +321,7 @@
         body: JSON.stringify({ session_id: sessionId, text, phone: phoneEl.value.trim() }),
       }).then(r => r.json());
       addMsg("agent", res.reply, "منشی · " + (res.phase || ""));
-      lastInfo = res.patient_info || {};
-      if (lastInfo.make) document.getElementById("qb-make").value = lastInfo.make;
-      if (lastInfo.model) document.getElementById("qb-model").value = lastInfo.model;
-      if (lastInfo.year) document.getElementById("qb-year").value = lastInfo.year;
-      if (lastInfo.km) document.getElementById("qb-km").value = lastInfo.km;
-      if (lastInfo.seller_name) document.getElementById("qb-name").value = lastInfo.seller_name;
+      fillForm(res.patient_info);
       if (res.appointment_id) loadAppts();
       if (res.calendar || res.offered_slots) loadCalendar();
     }
@@ -547,6 +558,7 @@
         }
         if (msg.event === "assistant") {
           addMsg("agent", msg.text, "منشی · " + (msg.phase || ""));
+          fillForm(msg.patient_info);
           if (msg.appointment_id) loadAppts();
           loadCalendar();
         }
