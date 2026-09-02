@@ -51,10 +51,6 @@ class Config:
     kavenegar_api_key: str
     kavenegar_sender: str
 
-    whisper_model_id: str
-    whisper_model_path: Path
-    whisper_device: str
-    whisper_compute_type: str
     shenava_model_id: str
     shenava_model_path: Path
     shenava_head: str
@@ -98,17 +94,11 @@ def load_config() -> Config:
         receptionist_number=_env("RECEPTIONIST_NUMBER", "+989120000000"),
         kavenegar_api_key=_env("KAVENEGAR_API_KEY"),
         kavenegar_sender=_env("KAVENEGAR_SENDER"),
-        whisper_model_id=_env("WHISPER_MODEL_ID", "vhdm/whisper-large-fa-v1"),
-        whisper_model_path=_resolve_path(
-            _env("WHISPER_MODEL_PATH", "./models/whisper-large-fa-v1")
-        ),
-        whisper_device=_env("WHISPER_DEVICE", "auto").lower() or "auto",
-        whisper_compute_type=_env("WHISPER_COMPUTE_TYPE", "int8") or "int8",
         shenava_model_id=_env("SHENAVA_MODEL_ID", "Reza2kn/Shenava-Koochik-v1.5"),
         shenava_model_path=_resolve_path(
             _env("SHENAVA_MODEL_PATH", "./models/shenava-koochik-v1.5")
         ),
-        shenava_head=_env("SHENAVA_HEAD", "ctc").lower() or "ctc",
+        shenava_head=_env("SHENAVA_HEAD", "rnnt").lower() or "rnnt",
         shenava_threads=int(_env("SHENAVA_THREADS", "4") or "4"),
         piper_model_path=_resolve_path(
             _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx")

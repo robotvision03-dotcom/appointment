@@ -51,16 +51,19 @@ KAVENEGAR_SENDER=1000xxxx
 | نیاز | ابزار |
 | --- | --- |
 | گفتگو / میکروفون | همین وب‌اپ + `/voice/live` |
-| STT | شنوا کوچیک v1.5 (`Reza2kn/Shenava-Koochik-v1.5`)، هد CTC |
-| پاسخ منشی | فقط متن روی صفحه؛ نرم‌افزار حرف نمی‌زند |
+| STT (شنیدن) | شنوا کوچیک v1.5 — `Reza2kn/Shenava-Koochik-v1.5` |
+| تماس با فروشنده | کاوه‌نگار TTS call + پیامک |
+| تماس دستی | `tel:` روی صفحه |
 
-مدل شنیدن را یک‌بار دانلود کنید (~۴۵۰ مگابایت):
+مدل شنیدن را یک‌بار دانلود کنید (~۱۳۰ مگابایت int8):
 
-```bash
-python -m src download-shenava
-# Windows:
+```powershell
+pip install -r requirements.txt
 py -m src download-shenava
+py -m src
 ```
+
+`py -m src download-whisper` و `py -m src.download_whisper` همان شنوا را دانلود می‌کنند.
 
 ## تست
 

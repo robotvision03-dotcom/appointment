@@ -1,60 +1,59 @@
 """Download Shenava-Koochik-v1.5 for local hearing (sherpa-onnx).
 
-Canonical model: Reza2kn/Shenava-Koochik-v1.5
-Runtime: Reza2kn/Shenava-Koochik-v1.5-RNNT-sherpa-onnx (int8)
-Plus CTC export (same CTC head as v1.5, 8.12% WER) when available.
+Source: Reza2kn/Shenava-Koochik-v1.5
+Runtime weights: Reza2kn/Shenava-Koochik-v1.5-RNNT-sherpa-onnx
 
-Usage: python -m src download-shenava
+Usage:
+  python -m src download-shenava
+  python -m src download-whisper
+  py scripts/download_shenava.py
 """
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 from src.config import config
 from src.utils import log
 
+V15 = "Reza2kn/Shenava-Koochik-v1.5"
 V15_RNNT = "Reza2kn/Shenava-Koochik-v1.5-RNNT-sherpa-onnx"
-V15_CTC = "Reza2kn/Shenava-Koochik-v1.0-sherpa-onnx"  # CTC head is identical to v1.5
+FILES = (
+    "encoder.int8.onnx",
+    "decoder.int8.onnx",
+    "joiner.int8.onnx",
+    "tokens.txt",
+)
 
 
-def _pull(repo: str, names: tuple[str, ...], dest) -> None:
-    from huggingface_hub import hf_hub_download
-
-    for name in names:
-        path = hf_hub_download(repo, name, local_dir=str(dest))
-        log.info("saved %s", path)
+def _ready(dest: Path) -> bool:
+    return all((dest / name).is_file() for name in FILES)
 
 
-def download(force: bool = False) -> None:
+def download(force: bool = False) -> Path:
     dest = config.shenava_model_path
     dest.mkdir(parents=True, exist_ok=True)
-    (dest / "SOURCE.txt").write_text(
-        "Reza2kn/Shenava-Koochik-v1.5\n" + V15_RNNT + "\n",
-        encoding="utf-8",
-    )
+    (dest / "SOURCE.txt").write_text(f"{V15}\n{V15_RNNT}\n", encoding="utf-8")
+    if _ready(dest) and not force:
+        log.info("Shenava-Koochik-v1.5 already at %s", dest)
+        print("OK", dest)
+        return dest
 
-    rnnt_ok = all(
-        (dest / n).is_file()
-        for n in ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
-    )
-    if not rnnt_ok or force:
-        log.info("Downloading Shenava-Koochik-v1.5 RNNT (sherpa-onnx int8)")
-        _pull(
-            V15_RNNT,
-            ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"),
-            dest,
-        )
-    else:
-        log.info("v1.5 RNNT already at %s", dest)
+    from huggingface_hub import hf_hub_download
 
-    ctc_ok = (dest / "model.onnx").is_file()
-    if not ctc_ok or force:
-        log.info("Downloading Shenava-Koochik-v1.5 CTC head (stronger WER)")
-        _pull(V15_CTC, ("model.onnx",), dest)
-    else:
-        log.info("CTC already at %s", dest / "model.onnx")
-
+    log.info("Downloading %s (int8 RNNT for sherpa-onnx)", V15_RNNT)
+    for name in FILES:
+        cached = hf_hub_download(repo_id=V15_RNNT, filename=name)
+        target = dest / name
+        shutil.copy(cached, target)
+        log.info("saved %s (%s bytes)", target.name, target.stat().st_size)
+    if not _ready(dest):
+        missing = [n for n in FILES if not (dest / n).is_file()]
+        raise RuntimeError(f"Shenava download incomplete: {missing}")
     print("OK Shenava-Koochik-v1.5", dest)
     print("Then: python -m src")
+    return dest
 
 
 def main() -> int:

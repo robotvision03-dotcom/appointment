@@ -62,7 +62,8 @@ class ShenavaSTT:
                 return False
             try:
                 threads = max(1, int(config.shenava_threads))
-                if _ctc_ready(self.model_path) and config.shenava_head != "rnnt":
+                want_ctc = config.shenava_head == "ctc" and _ctc_ready(self.model_path)
+                if want_ctc:
                     self._recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
                         model=str(self.model_path / "model.onnx"),
                         tokens=str(self.model_path / "tokens.txt"),
@@ -72,7 +73,7 @@ class ShenavaSTT:
                         decoding_method="greedy_search",
                     )
                     self.head = "ctc"
-                    log.info("Hearing ready: Shenava-Koochik-v1.5 CTC from %s", self.model_path)
+                    log.info("Hearing: Shenava-Koochik-v1.5 CTC %s", self.model_path)
                 elif _rnnt_ready(self.model_path):
                     self._recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
                         encoder=str(self.model_path / "encoder.int8.onnx"),
@@ -83,10 +84,15 @@ class ShenavaSTT:
                         sample_rate=16000,
                         feature_dim=80,
                         decoding_method="greedy_search",
+                        model_type="nemo",
                     )
                     self.head = "rnnt"
-                    log.info("Hearing ready: Shenava-Koochik-v1.5 RNNT from %s", self.model_path)
+                    log.info("Hearing: Shenava-Koochik-v1.5 RNNT %s", self.model_path)
                 else:
+                    self.last_error = (
+                        f"Shenava files missing in {self.model_path}. "
+                        "Run: python -m src download-shenava"
+                    )
                     return False
                 self.last_error = None
                 return True
@@ -113,7 +119,7 @@ class ShenavaSTT:
                 stream = self._recognizer.create_stream()
                 stream.accept_waveform(16000, audio)
                 self._recognizer.decode_stream(stream)
-                raw = self._recognizer.get_result(stream)
+                raw = stream.result
                 text = (getattr(raw, "text", None) or str(raw or "")).strip()
             log.info("STT transcript: %s", text)
             return text
