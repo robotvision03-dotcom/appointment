@@ -53,6 +53,7 @@ class Config:
 
     shenava_model_id: str
     shenava_model_path: Path
+    shenava_ctc_path: Path
     shenava_head: str
     shenava_threads: int
     piper_model_path: Path
@@ -98,7 +99,10 @@ def load_config() -> Config:
         shenava_model_path=_resolve_path(
             _env("SHENAVA_MODEL_PATH", "./models/shenava-koochik-v1.5")
         ),
-        shenava_head=_env("SHENAVA_HEAD", "rnnt").lower() or "rnnt",
+        shenava_ctc_path=_resolve_path(
+            _env("SHENAVA_CTC_PATH", "./models/shenava-koochik-ctc")
+        ),
+        shenava_head=_env("SHENAVA_HEAD", "ctc").lower() or "ctc",
         shenava_threads=int(_env("SHENAVA_THREADS", "4") or "4"),
         piper_model_path=_resolve_path(
             _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx")

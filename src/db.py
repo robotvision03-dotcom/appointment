@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from src.config import config
-from src.utils import log
+from src.service_match import best_service, snap_heard_text as _snap_heard
+from src.utils import log, normalize_persian
 
 DEFAULT_SLOTS = [
     "09:00",
@@ -301,7 +302,7 @@ def get_appointment(appointment_id: int, db_path: Path | None = None) -> dict[st
 SEED_SERVICES = [
     {
         "name": "آرایشگر",
-        "keywords": "آرایش آرایشگر آرایشگاه پیرایش سلمانی مو کوتاهی سالن زیبایی",
+        "keywords": "آرایش آرایشگر آرایشگاه آرایشگا پیرایش سلمانی مو کوتاهی سالن زیبایی",
         "providers": [
             ("سالن گلبرگ", "09121001001", "ونک"),
             ("پیرایش نو", "09121001002", "انقلاب"),
@@ -312,7 +313,7 @@ SEED_SERVICES = [
     },
     {
         "name": "مکانیک",
-        "keywords": "مکانیک ماشین خودرو تعمیر باتری پنچری تعمیرگاه امداد",
+        "keywords": "مکانیک میکانی میکنی مکنیک ماشین خودرو تعمیر باتری پنچری تعمیرگاه امداد",
         "providers": [
             ("تعمیرگاه آزادی", "09121111001", "آزادی"),
             ("امداد خودرو پارس", "09121111002", "تهرانپارس"),
@@ -436,14 +437,20 @@ def leftover_after_service(text: str, svc: dict[str, Any]) -> str:
 
 
 def find_service(text: str, db_path: Path | None = None) -> dict[str, Any] | None:
-    t = (text or "").replace("ي", "ی")
-    for svc in list_services(db_path):
-        if svc["name"] in t:
+    t = normalize_persian(text).replace("ي", "ی")
+    services = list_services(db_path)
+    for svc in services:
+        if svc["name"] and svc["name"] in t:
             return svc
         for kw in (svc.get("keywords") or "").split():
             if kw and kw in t:
                 return svc
-    return None
+    svc, _score = best_service(t, services)
+    return svc
+
+
+def snap_heard_text(text: str, db_path: Path | None = None) -> str:
+    return _snap_heard(text, list_services(db_path))
 
 
 def list_providers(service_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:

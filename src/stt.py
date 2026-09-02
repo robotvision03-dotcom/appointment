@@ -57,7 +57,7 @@ def _prepare_waveform(audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray
         wave = wave[max(0, start - pad) : min(wave.size, end + pad)]
     rms = float(np.sqrt(np.mean(np.square(wave)))) if wave.size else 0.0
     if rms > 1e-6:
-        wave = wave * min(0.12 / rms, 25.0)
+        wave = wave * min(0.08 / rms, 8.0)
         np.clip(wave, -0.99, 0.99, out=wave)
     pad = np.zeros(int(0.3 * sample_rate), dtype=np.float32)
     return np.concatenate([wave, pad])
@@ -74,7 +74,11 @@ class ShenavaSTT:
         self._lock = threading.Lock()
         self.last_error: str | None = None
         self.head = ""
-        if not _ctc_ready(self.model_path) and not _rnnt_ready(self.model_path):
+        if (
+            not _ctc_ready(config.shenava_ctc_path)
+            and not _ctc_ready(self.model_path)
+            and not _rnnt_ready(self.model_path)
+        ):
             self.last_error = (
                 f"Shenava not found at {self.model_path}. "
                 "Run: python -m src download-shenava"
@@ -87,7 +91,12 @@ class ShenavaSTT:
 
     @property
     def available(self) -> bool:
-        return _ctc_ready(self.model_path) or _rnnt_ready(self.model_path) or self._recognizer is not None
+        return (
+            _ctc_ready(config.shenava_ctc_path)
+            or _ctc_ready(self.model_path)
+            or _rnnt_ready(self.model_path)
+            or self._recognizer is not None
+        )
 
     def ensure_loaded(self) -> bool:
         if self._recognizer is not None:
@@ -103,18 +112,26 @@ class ShenavaSTT:
                 return False
             try:
                 threads = max(1, int(config.shenava_threads))
-                want_ctc = config.shenava_head == "ctc" and _ctc_ready(self.model_path)
-                if want_ctc:
+                prefer_ctc = config.shenava_head != "rnnt"
+                ctc_dir = (
+                    config.shenava_ctc_path
+                    if _ctc_ready(config.shenava_ctc_path)
+                    else self.model_path
+                    if _ctc_ready(self.model_path)
+                    else None
+                )
+                if prefer_ctc and ctc_dir is not None:
                     self._recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
-                        model=str(self.model_path / "model.onnx"),
-                        tokens=str(self.model_path / "tokens.txt"),
+                        model=str(ctc_dir / "model.onnx"),
+                        tokens=str(ctc_dir / "tokens.txt"),
                         num_threads=threads,
                         sample_rate=16000,
                         feature_dim=80,
                         decoding_method="greedy_search",
                     )
                     self.head = "ctc"
-                    log.info("Hearing: Shenava-Koochik-v1.5 CTC %s", self.model_path)
+                    self.engine = "shenava-koochik-ctc"
+                    log.info("Hearing: Shenava CTC (recommended) %s", ctc_dir)
                 elif _rnnt_ready(self.model_path):
                     common = dict(
                         encoder=str(self.model_path / "encoder.int8.onnx"),
@@ -165,7 +182,7 @@ class ShenavaSTT:
                 log.info("STT skip short audio samples=%s", audio.size)
                 return ""
             raw_rms = float(np.sqrt(np.mean(np.square(audio))))
-            if raw_rms < 0.002:
+            if raw_rms < 0.006:
                 log.info("STT skip quiet rms=%.5f", raw_rms)
                 return ""
             samples = _prepare_waveform(audio, 16000)
@@ -175,6 +192,13 @@ class ShenavaSTT:
                 stream.accept_waveform(16000, waveform)
                 self._recognizer.decode_stream(stream)
                 text = _sherpa_text(stream.result)
+            if text:
+                from src import db
+
+                snapped = db.snap_heard_text(text)
+                if snapped != text:
+                    log.info("STT snapped %r -> %r", text, snapped)
+                    text = snapped
             log.info(
                 "STT transcript=%r samples=%s rms=%.4f head=%s in_rate=%s",
                 text,

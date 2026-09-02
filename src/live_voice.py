@@ -70,7 +70,8 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                         stt.available,
                     )
                     greeting = call_manager.greeting()
-                    await _send_assistant(websocket, greeting, "ask_service", "continue")
+                    if not state.context:
+                        await _send_assistant(websocket, greeting, "ask_service", "continue")
                     await websocket.send_json(
                         {
                             "event": "status",

@@ -123,7 +123,13 @@ def test_dispatch_dialogue(isolated_db, monkeypatch):
     assert rows[0]["customer_phone"].endswith("9121234567") or "09121234567" in rows[0]["customer_phone"]
 
 
-def test_salon_keyword_and_five_barbers(isolated_db):
+def test_fuzzy_service_from_asr(isolated_db):
+    assert db.find_service("می کنی", isolated_db)["name"] == "مکانیک"
+    assert db.snap_heard_text("می کنی", isolated_db) == "مکانیک"
+    assert db.find_service("آرایشگا", isolated_db)["name"] == "آرایشگر"
+    assert db.find_service("کیش", isolated_db) is None
+    assert db.find_service("سخت کن", isolated_db) is None
+    assert db.find_service("کاتر خودرو ماشین", isolated_db)["name"] == "مکانیک"
     svc = db.find_service("آرایشگاه", isolated_db)
     assert svc is not None
     assert svc["name"] == "آرایشگر"

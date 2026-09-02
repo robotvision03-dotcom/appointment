@@ -51,11 +51,11 @@ KAVENEGAR_SENDER=1000xxxx
 | نیاز | ابزار |
 | --- | --- |
 | گفتگو / میکروفون | همین وب‌اپ + `/voice/live` |
-| STT (شنیدن) | شنوا کوچیک v1.5 — `Reza2kn/Shenava-Koochik-v1.5` |
+| STT (شنیدن) | شنوا CTC (توصیه‌شده) + RNNT به‌عنوان پشتیبان |
 | تماس با فروشنده | کاوه‌نگار TTS call + پیامک |
 | تماس دستی | `tel:` روی صفحه |
 
-مدل شنیدن را یک‌بار دانلود کنید (~۱۳۰ مگابایت int8):
+مدل شنیدن CTC را یک‌بار دانلود کنید (~۴۵۰ مگابایت؛ همان هد توصیه‌شدهٔ شنوا با WER حدود ۸٪). RNNT قبلی اگر باشد به‌عنوان پشتیبان می‌ماند:
 
 ```powershell
 pip install -r requirements.txt
@@ -63,9 +63,7 @@ py -m src download-shenava
 py -m src
 ```
 
-`py -m src download-whisper` و `py -m src.download_whisper` همان شنوا را دانلود می‌کنند.
-
-اگر منشی «متوجه نشدم» می‌گوید و در لاگ `Invalid model_type: nemo` یا `STT transcript=''` می‌بینید: سرور را قطع کنید، `git pull` بگیرید، صفحه را با Ctrl+F5 تازه کنید. بارگذاری درست باید `Hearing: ... rnnt-nemo_transducer` باشد و گفته شما در کادر متن ظاهر شود.
+در `.env` مقدار `SHENAVA_HEAD=ctc` باشد. بعد از دانلود، لاگ باید `Hearing: Shenava CTC` نشان دهد. گفته‌های نزدیک مثل «می کنی» به «مکانیک» نگاشت می‌شوند.
 
 ## تست
 
