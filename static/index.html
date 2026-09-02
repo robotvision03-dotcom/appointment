@@ -513,6 +513,34 @@
       }
     });
 
+    /** Average-pool resample to 16 kHz (Shenava / sherpa-onnx). */
+    function downsampleTo16k(float32, inRate) {
+      const target = 16000;
+      if (!inRate || inRate <= target + 50) return float32;
+      const ratio = inRate / target;
+      const outLen = Math.max(1, Math.floor(float32.length / ratio));
+      const out = new Float32Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const start = Math.floor(i * ratio);
+        const end = Math.min(float32.length, Math.floor((i + 1) * ratio));
+        let sum = 0;
+        const n = Math.max(1, end - start);
+        for (let j = start; j < end; j++) sum += float32[j];
+        out[i] = sum / n;
+      }
+      return out;
+    }
+
+    /** WebSocket PCM must be little-endian Int16, not Float32. */
+    function floatToPcm16(float32) {
+      const pcm = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32[i]));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      return pcm;
+    }
+
     async function stopLive() {
       if (liveWs) {
         try { liveWs.send(JSON.stringify({ event: "stop" })); liveWs.close(); } catch (e) {}
@@ -540,21 +568,30 @@
         liveBtn.textContent = "قطع تماس صوتی";
         liveBtn.classList.add("on");
         try {
-          liveStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-          liveCtx = new AudioContext();
-          const rate = liveCtx.sampleRate || 16000;
-          ws.send(JSON.stringify({ event: "start", session_id: sessionId, phone: phoneEl.value.trim(), sample_rate: rate }));
+          liveStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+          });
+          try {
+            liveCtx = new AudioContext({ sampleRate: 16000 });
+          } catch (e) {
+            liveCtx = new AudioContext();
+          }
+          await liveCtx.resume();
+          const inRate = liveCtx.sampleRate || 48000;
+          ws.send(JSON.stringify({
+            event: "start",
+            session_id: sessionId,
+            phone: phoneEl.value.trim(),
+            sample_rate: 16000,
+            encoding: "pcm_s16le",
+          }));
           const src = liveCtx.createMediaStreamSource(liveStream);
           const proc = liveCtx.createScriptProcessor(4096, 1, 1);
           proc.onaudioprocess = (ev) => {
             if (!liveWs || liveWs.readyState !== 1) return;
             const f32 = ev.inputBuffer.getChannelData(0);
-            const pcm = new Int16Array(f32.length);
-            for (let i = 0; i < f32.length; i++) {
-              const s = Math.max(-1, Math.min(1, f32[i]));
-              pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-            }
-            liveWs.send(pcm.buffer);
+            const pcm = floatToPcm16(downsampleTo16k(f32, inRate));
+            liveWs.send(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength));
           };
           src.connect(proc);
           const silent = liveCtx.createGain();

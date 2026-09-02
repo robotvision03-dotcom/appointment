@@ -74,7 +74,7 @@ class Config:
     stt_sample_rate: int = 16000
     vad_silence_ms: int = 700
     min_utterance_ms: int = 700
-    energy_threshold: int = 120
+    energy_threshold: int = 80
 
     @property
     def twilio_configured(self) -> bool:

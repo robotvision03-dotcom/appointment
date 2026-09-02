@@ -125,18 +125,30 @@ class ShenavaSTT:
             return ""
         try:
             audio = _pcm16_to_float32(audio_data, sample_rate)
-            if audio.size < 2400:
+            if audio.size < 4000:
+                log.info("STT skip short audio samples=%s", audio.size)
                 return ""
             rms = float(np.sqrt(np.mean(np.square(audio))))
-            if rms < 0.01:
+            if rms < 0.004:
+                log.info("STT skip quiet rms=%.5f", rms)
                 return ""
+            # NeMo transducers often need a little trailing silence to flush.
+            pad = np.zeros(int(0.25 * 16000), dtype=np.float32)
+            samples = np.concatenate([np.ascontiguousarray(audio, dtype=np.float32), pad])
+            waveform = samples.astype(np.float32, copy=False).ravel().tolist()
             with self._lock:
                 stream = self._recognizer.create_stream()
-                samples = np.ascontiguousarray(audio, dtype=np.float32)
-                stream.accept_waveform(16000, samples)
+                # List[float] — Windows sherpa-onnx does not accept NumPy arrays.
+                stream.accept_waveform(16000, waveform)
                 self._recognizer.decode_stream(stream)
                 text = _sherpa_text(stream.result)
-            log.info("STT transcript: %s", text)
+            log.info(
+                "STT transcript=%r samples=%s rms=%.4f in_rate=%s",
+                text,
+                int(audio.size),
+                rms,
+                sample_rate,
+            )
             return text
         except Exception as exc:  # noqa: BLE001
             log.error("STT failed: %s", exc)
@@ -150,15 +162,17 @@ class ShenavaSTT:
 
 
 def _pcm16_to_float32(audio_data: bytes, sample_rate: int) -> np.ndarray:
-    pcm = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-    if sample_rate == 16000 or pcm.size == 0:
-        return pcm
-    n = int(round(pcm.size * 16000 / sample_rate))
-    if n <= 0:
-        return pcm
-    x_old = np.linspace(0.0, 1.0, num=pcm.size, endpoint=False)
-    x_new = np.linspace(0.0, 1.0, num=n, endpoint=False)
-    return np.interp(x_new, x_old, pcm).astype(np.float32)
+    import audioop
+
+    raw = bytes(audio_data)
+    if len(raw) % 2:
+        raw = raw[:-1]
+    if not raw:
+        return np.zeros(0, dtype=np.float32)
+    rate = int(sample_rate or 16000)
+    if rate != 16000 and rate >= 8000:
+        raw, _ = audioop.ratecv(raw, 2, 1, rate, 16000, None)
+    return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
 
 stt = ShenavaSTT()

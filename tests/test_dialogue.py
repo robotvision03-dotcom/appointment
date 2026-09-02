@@ -12,7 +12,7 @@ os.environ.setdefault("DB_PATH", str(Path(tempfile.gettempdir()) / "pva_test.db"
 
 from src import db
 from src.call_manager import call_manager
-from src.stt import _sherpa_text
+from src.stt import _pcm16_to_float32, _sherpa_text
 from src.utils import parse_relative_date, parse_time, wants_transfer
 
 
@@ -25,6 +25,18 @@ def test_sherpa_empty_result_is_not_json_dump():
 
     assert _sherpa_text(Fake()) == ""
     assert _sherpa_text({"text": "آرایشگاه", "ys_log_probs": []}) == "آرایشگاه"
+
+
+def test_pcm16_resamples_48k_to_16k():
+    import numpy as np
+
+    rate_in = 48000
+    n = rate_in  # 1 second
+    t = np.arange(n, dtype=np.float32) / rate_in
+    tone = (0.2 * np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16).tobytes()
+    out = _pcm16_to_float32(tone, rate_in)
+    assert 15000 < out.size < 17000
+    assert float(np.max(np.abs(out))) > 0.05
 
 
 @pytest.fixture()

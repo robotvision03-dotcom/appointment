@@ -119,9 +119,16 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                         if transcript:
                             await _handle_utterance(websocket, call_sid, transcript)
                         else:
+                            log.info(
+                                "STT empty sid=%s bytes=%s rate=%s last_rms=%s",
+                                call_sid,
+                                len(chunk),
+                                sample_rate,
+                                energy,
+                            )
                             await _send_assistant(
                                 websocket,
-                                "متوجه نشدم. لطفاً دوباره بفرمایید یا در کادر متن بنویسید.",
+                                "متوجه نشدم. لطفاً دوباره بفرمایید، یا در کادر متن بنویسید مثلاً آرایشگاه.",
                                 "ask_repeat",
                                 "continue",
                             )
