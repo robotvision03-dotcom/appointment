@@ -10,6 +10,7 @@ logs/
 models/vosk-model-fa/
 models/whisper-large-fa-v1/
 models/shenava-koochik-v1.5/
+models/shenava-koochik-ctc/
 models/piper-voice-fa/
 *.onnx
 *.onnx.json
