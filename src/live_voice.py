@@ -31,6 +31,7 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
     silence_ms = 0
     voiced_ms = 0
     pcm_buffer = bytearray()
+    preroll = bytearray()
     sample_rate = config.stt_sample_rate
 
     log.info("Browser voice WebSocket connected")
@@ -94,44 +95,61 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                 if not call_sid or len(pcm) < 2:
                     continue
                 energy = pcm16_rms(pcm)
-                pcm_buffer.extend(pcm)
-                max_bytes = sample_rate * 2 * 20
-                if len(pcm_buffer) > max_bytes:
-                    del pcm_buffer[: len(pcm_buffer) - sample_rate * 2 * 12]
                 duration_ms = int(1000 * (len(pcm) // 2) / sample_rate) or FRAME_MS_ESTIMATE
+                preroll_cap = sample_rate * 2 // 3  # ~300 ms
+                max_bytes = sample_rate * 2 * 12
 
                 if energy >= config.energy_threshold:
-                    speech_started = True
+                    if not speech_started:
+                        pcm_buffer = bytearray(preroll)
+                        speech_started = True
+                    pcm_buffer.extend(pcm)
+                    if len(pcm_buffer) > max_bytes:
+                        del pcm_buffer[: len(pcm_buffer) - max_bytes]
                     voiced_ms += duration_ms
                     silence_ms = 0
-                elif speech_started:
-                    silence_ms += duration_ms
-                    if (
-                        silence_ms >= config.vad_silence_ms
-                        and voiced_ms >= config.min_utterance_ms
-                    ):
-                        chunk = bytes(pcm_buffer)
-                        pcm_buffer.clear()
-                        speech_started = False
-                        silence_ms = 0
-                        voiced_ms = 0
-                        transcript = await asyncio.to_thread(stt.transcribe, chunk, sample_rate)
-                        if transcript:
-                            await _handle_utterance(websocket, call_sid, transcript)
-                        else:
-                            log.info(
-                                "STT empty sid=%s bytes=%s rate=%s last_rms=%s",
-                                call_sid,
-                                len(chunk),
-                                sample_rate,
-                                energy,
+                else:
+                    preroll.extend(pcm)
+                    if len(preroll) > preroll_cap:
+                        del preroll[: len(preroll) - preroll_cap]
+                    if speech_started:
+                        pcm_buffer.extend(pcm)
+                        silence_ms += duration_ms
+                        if (
+                            silence_ms >= config.vad_silence_ms
+                            and voiced_ms >= config.min_utterance_ms
+                        ):
+                            chunk = bytes(pcm_buffer)
+                            pcm_buffer = bytearray()
+                            preroll = bytearray()
+                            speech_started = False
+                            silence_ms = 0
+                            voiced_ms = 0
+                            await websocket.send_json(
+                                {"event": "dictation", "text": "…", "hearing": True}
                             )
-                            await _send_assistant(
-                                websocket,
-                                "متوجه نشدم. لطفاً دوباره بفرمایید، یا در کادر متن بنویسید مثلاً آرایشگاه.",
-                                "ask_repeat",
-                                "continue",
+                            transcript = await asyncio.to_thread(
+                                stt.transcribe, chunk, sample_rate
                             )
+                            if transcript:
+                                await websocket.send_json(
+                                    {"event": "dictation", "text": transcript}
+                                )
+                                await _handle_utterance(websocket, call_sid, transcript)
+                            else:
+                                log.info(
+                                    "STT empty sid=%s bytes=%s rate=%s last_rms=%s",
+                                    call_sid,
+                                    len(chunk),
+                                    sample_rate,
+                                    energy,
+                                )
+                                await websocket.send_json(
+                                    {
+                                        "event": "status",
+                                        "message": "شنیده نشد. نزدیک‌تر و واضح بگویید، یا در کادر بنویسید.",
+                                    }
+                                )
 
     except WebSocketDisconnect:
         log.info("Browser voice disconnected %s", call_sid)

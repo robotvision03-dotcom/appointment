@@ -185,7 +185,7 @@
         <button type="submit">ارسال</button>
       </form>
       <div id="transfer" hidden class="transfer-box"></div>
-      <p class="hint">حرف بزنید؛ متن گفته‌تان و پاسخ منشی روی صفحه نوشته می‌شود. نرم‌افزار حرف نمی‌زند.</p>
+      <p class="hint">با «شروع تماس صوتی» حرف بزنید؛ متن شنیده‌شده در همین کادر نوشته می‌شود. اگر خالی ماند، همان را تایپ کنید. نرم‌افزار حرف نمی‌زند.</p>
     </section>
     <div>
       <section class="card">
@@ -606,7 +606,13 @@
       ws.onmessage = (ev) => {
         if (typeof ev.data !== "string") return;
         const msg = JSON.parse(ev.data);
-        if (msg.event === "user") addMsg("user", msg.text, "شما · گفتار");
+        if (msg.event === "dictation" && msg.text) {
+          textEl.value = msg.text === "…" ? "در حال شنیدن…" : msg.text;
+        }
+        if (msg.event === "user") {
+          addMsg("user", msg.text, "شما · گفتار");
+          textEl.value = msg.text || "";
+        }
         if (msg.event === "assistant") {
           applyAssistant({ reply: msg.text, phase: msg.phase, transfer: msg.transfer });
         }

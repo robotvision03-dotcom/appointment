@@ -12,7 +12,7 @@ os.environ.setdefault("DB_PATH", str(Path(tempfile.gettempdir()) / "pva_test.db"
 
 from src import db
 from src.call_manager import call_manager
-from src.stt import _pcm16_to_float32, _sherpa_text
+from src.stt import _pcm16_to_float32, _prepare_waveform, _sherpa_text
 from src.utils import parse_relative_date, parse_time, wants_transfer
 
 
@@ -37,6 +37,17 @@ def test_pcm16_resamples_48k_to_16k():
     out = _pcm16_to_float32(tone, rate_in)
     assert 15000 < out.size < 17000
     assert float(np.max(np.abs(out))) > 0.05
+
+
+def test_prepare_waveform_boosts_quiet_speech():
+    import numpy as np
+
+    n = 16000
+    t = np.arange(n, dtype=np.float32) / 16000
+    quiet = (0.008 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+    out = _prepare_waveform(quiet, 16000)
+    rms = float(np.sqrt(np.mean(np.square(out[:n]))))
+    assert rms > 0.04
 
 
 @pytest.fixture()

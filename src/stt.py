@@ -37,6 +37,32 @@ def _sherpa_text(raw) -> str:
     return text
 
 
+def _prepare_waveform(audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
+    """Trim silence and raise gain so quiet laptop mics still reach Shenava."""
+    wave = np.ascontiguousarray(audio, dtype=np.float32).ravel()
+    if wave.size == 0:
+        return wave
+    frame = max(1, int(0.02 * sample_rate))
+    n_frames = max(1, wave.size // frame)
+    energies = np.sqrt(
+        np.mean(np.square(wave[: n_frames * frame].reshape(n_frames, frame)), axis=1)
+    )
+    peak = float(np.max(energies)) if energies.size else 0.0
+    gate = max(0.004, peak * 0.15)
+    voiced = np.flatnonzero(energies >= gate)
+    if voiced.size:
+        start = int(voiced[0] * frame)
+        end = int(min(wave.size, (voiced[-1] + 1) * frame))
+        pad = int(0.05 * sample_rate)
+        wave = wave[max(0, start - pad) : min(wave.size, end + pad)]
+    rms = float(np.sqrt(np.mean(np.square(wave)))) if wave.size else 0.0
+    if rms > 1e-6:
+        wave = wave * min(0.12 / rms, 25.0)
+        np.clip(wave, -0.99, 0.99, out=wave)
+    pad = np.zeros(int(0.3 * sample_rate), dtype=np.float32)
+    return np.concatenate([wave, pad])
+
+
 class ShenavaSTT:
     """16 kHz mono PCM → Persian text via Shenava-Koochik-v1.5."""
 
@@ -90,7 +116,7 @@ class ShenavaSTT:
                     self.head = "ctc"
                     log.info("Hearing: Shenava-Koochik-v1.5 CTC %s", self.model_path)
                 elif _rnnt_ready(self.model_path):
-                    self._recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+                    common = dict(
                         encoder=str(self.model_path / "encoder.int8.onnx"),
                         decoder=str(self.model_path / "decoder.int8.onnx"),
                         joiner=str(self.model_path / "joiner.int8.onnx"),
@@ -99,10 +125,20 @@ class ShenavaSTT:
                         sample_rate=16000,
                         feature_dim=80,
                         decoding_method="greedy_search",
-                        model_type="nemo",
                     )
-                    self.head = "rnnt"
-                    log.info("Hearing: Shenava-Koochik-v1.5 RNNT %s", self.model_path)
+                    # Official export requires nemo_transducer. "nemo" is invalid and
+                    # sherpa then guesses — often decoding blank transcripts.
+                    try:
+                        self._recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+                            **common,
+                            model_type="nemo_transducer",
+                        )
+                        self.head = "rnnt-nemo_transducer"
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("nemo_transducer load failed (%s); retrying without type", exc)
+                        self._recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(**common)
+                        self.head = "rnnt-auto"
+                    log.info("Hearing: Shenava-Koochik-v1.5 %s %s", self.head, self.model_path)
                 else:
                     self.last_error = (
                         f"Shenava files missing in {self.model_path}. "
@@ -125,28 +161,26 @@ class ShenavaSTT:
             return ""
         try:
             audio = _pcm16_to_float32(audio_data, sample_rate)
-            if audio.size < 4000:
+            if audio.size < 3200:
                 log.info("STT skip short audio samples=%s", audio.size)
                 return ""
-            rms = float(np.sqrt(np.mean(np.square(audio))))
-            if rms < 0.004:
-                log.info("STT skip quiet rms=%.5f", rms)
+            raw_rms = float(np.sqrt(np.mean(np.square(audio))))
+            if raw_rms < 0.002:
+                log.info("STT skip quiet rms=%.5f", raw_rms)
                 return ""
-            # NeMo transducers often need a little trailing silence to flush.
-            pad = np.zeros(int(0.25 * 16000), dtype=np.float32)
-            samples = np.concatenate([np.ascontiguousarray(audio, dtype=np.float32), pad])
+            samples = _prepare_waveform(audio, 16000)
             waveform = samples.astype(np.float32, copy=False).ravel().tolist()
             with self._lock:
                 stream = self._recognizer.create_stream()
-                # List[float] — Windows sherpa-onnx does not accept NumPy arrays.
                 stream.accept_waveform(16000, waveform)
                 self._recognizer.decode_stream(stream)
                 text = _sherpa_text(stream.result)
             log.info(
-                "STT transcript=%r samples=%s rms=%.4f in_rate=%s",
+                "STT transcript=%r samples=%s rms=%.4f head=%s in_rate=%s",
                 text,
                 int(audio.size),
-                rms,
+                raw_rms,
+                self.head,
                 sample_rate,
             )
             return text

@@ -72,9 +72,9 @@ class Config:
     # Audio / VAD
     twilio_sample_rate: int = 8000
     stt_sample_rate: int = 16000
-    vad_silence_ms: int = 700
-    min_utterance_ms: int = 700
-    energy_threshold: int = 80
+    vad_silence_ms: int = 500
+    min_utterance_ms: int = 400
+    energy_threshold: int = 50
 
     @property
     def twilio_configured(self) -> bool:
