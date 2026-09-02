@@ -41,9 +41,8 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 def _startup() -> None:
     db.init_db()
     log.info(
-        "Agent ready host=%s port=%s stt=%s ollama=%s kavenegar=%s",
-        config.host,
-        config.port,
+        "Agent ready hearing=%s stt=%s ollama=%s kavenegar=%s",
+        getattr(stt, "engine", "none"),
         stt.available,
         llm.is_available(),
         config.kavenegar_configured,

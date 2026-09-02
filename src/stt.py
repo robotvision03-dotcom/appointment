@@ -72,7 +72,7 @@ class ShenavaSTT:
                         decoding_method="greedy_search",
                     )
                     self.head = "ctc"
-                    log.info("Shenava-Koochik-v1.5 CTC ready from %s", self.model_path)
+                    log.info("Hearing ready: Shenava-Koochik-v1.5 CTC from %s", self.model_path)
                 elif _rnnt_ready(self.model_path):
                     self._recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
                         encoder=str(self.model_path / "encoder.int8.onnx"),
@@ -85,7 +85,7 @@ class ShenavaSTT:
                         decoding_method="greedy_search",
                     )
                     self.head = "rnnt"
-                    log.info("Shenava-Koochik-v1.5 RNNT ready from %s", self.model_path)
+                    log.info("Hearing ready: Shenava-Koochik-v1.5 RNNT from %s", self.model_path)
                 else:
                     return False
                 self.last_error = None
