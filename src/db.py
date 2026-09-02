@@ -256,8 +256,9 @@ def find_car(text: str) -> dict | None:
 
 
 def snap_heard_text(text: str, db_path: Path | None = None) -> str:
-    """Map a noisy transcript onto a catalog car when confident."""
-    hit = find_car(text)
+    from src.lexicon import resolve_car
+
+    hit = resolve_car(text)
     if not hit:
         return normalize_persian(text)
     if hit.get("model"):
