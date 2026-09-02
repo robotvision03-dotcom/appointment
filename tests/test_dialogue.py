@@ -74,6 +74,14 @@ def test_lexicon_fixes_asr_fragments():
     pride = resolve_car("پرا")
     assert pride is not None
     assert pride["model"] == "پراید"
+    peugeot = resolve_car("پجو پارس")
+    assert peugeot is not None
+    assert peugeot["make"] == "پژو"
+    assert peugeot["model"] == "پارس"
+    assert resolve_car("پژو پارس")["model"] == "پارس"
+    two_oh_six = resolve_car("دویست و شش")
+    assert two_oh_six is not None
+    assert "۲۰۶" in (two_oh_six.get("model") or "")
 
 
 def test_parse_year_and_km():

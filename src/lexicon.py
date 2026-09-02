@@ -11,6 +11,38 @@ from difflib import SequenceMatcher
 from src.cars import CATALOG
 from src.utils import normalize_persian
 
+# Letters Shenava/Whisper often confuse in Persian (homophones + similar glyphs).
+_LETTER_PAIRS = (
+    ("ژ", "ج"),
+    ("ق", "غ"),
+    ("ث", "س"),
+    ("ص", "س"),
+    ("ط", "ت"),
+    ("ذ", "ز"),
+    ("ض", "ز"),
+    ("ظ", "ز"),
+    ("ك", "ک"),
+    ("ة", "ه"),
+    ("أ", "ا"),
+    ("إ", "ا"),
+    ("ؤ", "و"),
+)
+
+
+def letter_swap_variants(folded: str) -> set[str]:
+    """One-substitution neighbors used as extra ASR spellings of catalog names."""
+    if len(folded) < 3:
+        return set()
+    out: set[str] = set()
+    for a, b in _LETTER_PAIRS:
+        if a in folded:
+            out.add(folded.replace(a, b, 1))
+        if b in folded and a != b:
+            out.add(folded.replace(b, a, 1))
+    out.discard(folded)
+    return out
+
+
 # Heard fragment → canonical spoken form (then matched against the catalog).
 ASR_ALIASES = {
     "سمن": "سمند",
@@ -50,6 +82,20 @@ ASR_ALIASES = {
     "هایما": "هایما",
     "فیدلیتی": "فیدلیتی",
     "دیگنیتی": "دیگنیتی",
+    "پژوپارس": "پژو پارس",
+    "پجو پارس": "پژو پارس",
+    "پجوپارس": "پژو پارس",
+    "دو شش": "۲۰۶",
+    "دویست و شش": "۲۰۶",
+    "چهارصد پنج": "۴۰۵",
+    "چهارصد و پنج": "۴۰۵",
+    "تیگو": "تیگو ۵",
+    "آریزو": "آریزو ۵",
+    "کوییک ار": "کوییک",
+    "دنا توربو": "دنا پلاس",
+    "سورن پلاس": "سمند سورن",
+    "وانت نیسان": "نیسان آبی",
+    "نیسان ابی": "نیسان آبی",
 }
 
 
@@ -99,6 +145,13 @@ class CarDictionary:
                 for n in range(3, min(len(f), 8) + 1):
                     self.prefix[f[:n]].append(idx)
         self.aliases = {fold(k): fold(v) for k, v in ASR_ALIASES.items()}
+        for make, model, extra in CATALOG:
+            for tok in (make, model, *extra.split()):
+                f = fold(tok)
+                if len(f) < 4:
+                    continue
+                for variant in letter_swap_variants(f):
+                    self.aliases.setdefault(variant, f)
 
     def lookup(self, text: str) -> dict | None:
         raw = normalize_persian(text)
@@ -123,7 +176,13 @@ class CarDictionary:
             if f == folded:
                 consider(1.0, make, model, kind == "model" or fold(model) == f)
             elif len(folded) >= 3 and (folded in f or f in folded):
-                consider(0.93 if f.startswith(folded) or folded.startswith(f) else 0.86, make, model, True)
+                model_in = fold(model) and fold(model) in folded
+                prefixish = f.startswith(folded) or folded.startswith(f)
+                if model_in or kind == "model":
+                    consider(0.95 if model_in else (0.93 if prefixish else 0.86), make, model, True)
+                else:
+                    # Make-only substring (پژو inside پژوپارس) must not pick «RD».
+                    consider(0.72, make, model, False)
 
         # Prefix index (سمن → سمند)
         for idx in self.prefix.get(folded[: min(len(folded), 8)], []):
@@ -154,7 +213,7 @@ class CarDictionary:
         scored = list(best_map.values())
         if not scored:
             return None
-        scored.sort(key=lambda x: (x[0], -len(x[2]), 1 if x[3] else 0), reverse=True)
+        scored.sort(key=lambda x: (x[0], 1 if x[3] else 0, len(x[2])), reverse=True)
         best = scored[0]
         if best[0] < 0.82:
             return None
