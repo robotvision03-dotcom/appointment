@@ -1,8 +1,8 @@
-"""FastAPI entrypoint: Twilio webhooks, Media Streams WebSocket, demo UI, health."""
+"""FastAPI: car appraisal office — voice booking + Airbnb-style calendar."""
 
 from __future__ import annotations
 
-from pathlib import Path
+from datetime import date
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -11,25 +11,19 @@ from fastapi.staticfiles import StaticFiles
 from src import db
 from src.call_manager import call_manager
 from src.config import ROOT_DIR, config
+from src.jalali import to_jalali
 from src.llm import llm
-from src.stt import stt
-from src.handoff import start_warm_transfer
 from src.live_voice import handle_browser_voice
 from src.sip_bridge import sip_turn
 from src.sms import send_booking_sms
-from src.dispatch import connect_customer_to_provider
-from src.twilio_handler import (
-    handle_incoming_call,
-    handle_media_stream,
-    receptionist_join_twiml,
-    twiml_response,
-)
+from src.stt import stt
+from src.twilio_handler import handle_incoming_call, handle_media_stream, twiml_response
 from src.utils import log
 
 app = FastAPI(
-    title="Persian service dispatcher",
-    description="اتصال مشتری به سرویس‌دهنده (آرایشگر، مکانیک، اورژانس، پزشک و …)",
-    version="1.0.0",
+    title="دفتر کارشناسی خودرو",
+    description="خرید خودرو از فروشنده: کارشناسی و تعیین قیمت رایگان با نوبت نیم‌ساعته",
+    version="2.0.0",
 )
 
 STATIC_DIR = ROOT_DIR / "static"
@@ -41,11 +35,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 def _startup() -> None:
     db.init_db()
     log.info(
-        "Agent ready hearing=%s stt=%s ollama=%s kavenegar=%s",
+        "Car office ready address=%s hearing=%s stt=%s",
+        config.office_address,
         getattr(stt, "engine", "none"),
         stt.available,
-        llm.is_available(),
-        config.kavenegar_configured,
     )
 
 
@@ -58,28 +51,23 @@ def index() -> HTMLResponse:
 def health() -> dict:
     return {
         "status": "ok",
+        "office": {
+            "address": config.office_address,
+            "hours": f"{config.office_hours_start}–{config.office_hours_end}",
+            "slot_minutes": 30,
+            "closed": "جمعه",
+        },
         "stt": {
             "available": stt.available,
             "engine": stt.engine,
-            "model": stt.model_id,
-            "path": str(stt.model_path),
-            "loaded": stt.loaded,
             "head": getattr(stt, "head", ""),
             "error": stt.last_error,
         },
-        "tts": {"available": False, "enabled": False},
-        "llm": {
-            "available": llm.is_available(),
-            "url": llm.url,
-            "model": llm.model,
-            "error": llm.last_error,
-            "installed": llm.list_models() if llm.is_available() else [],
-        },
+        "tts": {"available": False},
+        "llm": {"available": llm.is_available(), "model": llm.model},
         "sms": {"provider": "kavenegar", "available": config.kavenegar_configured},
         "voice": {"browser": True, "stt": stt.available, "tts": False},
-        "receptionist_number": config.receptionist_number,
-        "doctors": len(db.list_doctors()),
-        "services": len(db.list_services()),
+        "cars": len(db.list_cars()),
     }
 
 
@@ -95,131 +83,97 @@ async def voice_stream(websocket: WebSocket) -> None:
 
 @app.websocket("/voice/live")
 async def voice_live(websocket: WebSocket) -> None:
-    """Microphone session from the clinic web app (usable in Iran)."""
     await handle_browser_voice(websocket)
 
 
-@app.post("/voice/transfer-status")
-async def transfer_status(request: Request) -> JSONResponse:
-    form = await request.form()
-    log.info("Transfer status CallSid=%s Status=%s", form.get("CallSid"), form.get("CallStatus"))
-    return JSONResponse({"ok": True})
+@app.get("/api/cars")
+def api_cars(q: str = "") -> list[dict]:
+    rows = db.list_cars()
+    if not q:
+        return rows
+    needle = q.strip()
+    return [r for r in rows if needle in r["make"] or needle in r["model"] or needle in (r.get("keywords") or "")]
 
 
-@app.post("/voice/receptionist-join")
-@app.get("/voice/receptionist-join")
-async def receptionist_join(request: Request) -> Response:
-    conference = request.query_params.get("conference") or "clinic"
-    play = request.query_params.get("play") or ""
-    return twiml_response(receptionist_join_twiml(conference, play))
+@app.get("/api/cars/makes")
+def api_makes() -> list[str]:
+    return db.list_makes()
 
 
-@app.get("/api/services")
-def api_services() -> list[dict]:
-    return db.list_services()
-
-
-@app.get("/api/providers")
-def api_providers(service_id: int) -> list[dict]:
-    return db.list_providers(service_id)
-
-
-@app.post("/api/connect")
-async def api_connect(request: Request) -> JSONResponse:
-    """Customer picks a provider; we call them and SMS the customer's number."""
-    body = await request.json()
-    try:
-        provider_id = int(body.get("provider_id"))
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "سرویس‌دهنده را انتخاب کنید."}, status_code=400)
-    phone = str(body.get("customer_phone") or body.get("phone") or "").strip()
-    name = str(body.get("customer_name") or body.get("name") or "").strip()
-    if not phone:
-        return JSONResponse({"ok": False, "error": "شماره موبایل مشتری لازم است."}, status_code=400)
-    if not db.get_provider(provider_id):
-        return JSONResponse({"ok": False, "error": "سرویس‌دهنده نامعتبر است."}, status_code=400)
-    result = connect_customer_to_provider(phone, provider_id, name)
-    return JSONResponse(result)
-
-
-@app.get("/api/requests")
-def api_requests() -> list[dict]:
-    return db.list_service_requests()
-
-
-@app.get("/api/doctors")
-def api_doctors() -> list[dict]:
-    return db.list_doctors()
+@app.get("/api/calendar")
+def api_calendar(year: int | None = None, month: int | None = None) -> dict:
+    today = date.today()
+    jy, jm, _jd = to_jalali(today)
+    return db.month_calendar(year or jy, month or jm)
 
 
 @app.get("/api/slots")
-def api_slots(doctor_id: int, date: str) -> dict:
-    return {"slots": db.get_available_slots(doctor_id, date)}
+def api_slots(date: str) -> dict:
+    return {
+        "date": date,
+        "slots": db.available_slots(date),
+        "all": db.slot_times(),
+        "taken": sorted(db.taken_times(date)),
+        "address": config.office_address,
+    }
 
 
 @app.post("/api/book")
 async def api_book(request: Request) -> JSONResponse:
-    """Patient-managed booking: no conversation required."""
     body = await request.json()
-    name = str(body.get("patient_name") or body.get("name") or "").strip()
-    phone = str(body.get("phone") or "")
-    try:
-        doctor_id = int(body.get("doctor_id"))
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "پزشک را انتخاب کنید."}, status_code=400)
-    date = str(body.get("date") or "").strip()
+    name = str(body.get("seller_name") or body.get("name") or "").strip()
+    phone = str(body.get("phone") or "").strip()
+    make = str(body.get("make") or "").strip()
+    model = str(body.get("model") or "").strip()
+    year = str(body.get("year") or "").strip()
+    day = str(body.get("date") or "").strip()
     time = str(body.get("time") or "").strip()
-    if not name or not date or not time:
-        return JSONResponse({"ok": False, "error": "نام، تاریخ و ساعت لازم است."}, status_code=400)
-    if not db.get_doctor(doctor_id):
-        return JSONResponse({"ok": False, "error": "پزشک نامعتبر است."}, status_code=400)
+    km_raw = body.get("km")
+    km = int(km_raw) if str(km_raw or "").isdigit() else None
+    if not name or not make or not day or not time:
+        return JSONResponse(
+            {"ok": False, "error": "نام، نوع خودرو، تاریخ و ساعت لازم است."},
+            status_code=400,
+        )
     try:
-        appt_id = db.book_appointment(name, phone, doctor_id, date, time)
+        appt_id = db.book_inspection(name, phone, make, model, year, km, day, time)
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
-    appt = db.get_appointment(appt_id)
-    if phone:
-        from src.call_manager import call_manager
-
-        sid = f"form-{appt_id}"
-        call_manager.end_call(sid)
-        st = call_manager.start_call(sid, from_number=phone)
-        st.appointment_id = appt_id
-        st.patient_info = {
-            "patient_name": name,
-            "doctor_name": (appt or {}).get("doctor_name"),
-            "date": date,
-            "time": time,
+    appt = db.get_inspection(appt_id)
+    return JSONResponse(
+        {
+            "ok": True,
+            "appointment": appt,
+            "message": (
+                f"نوبت ثبت شد. {day} ساعت {time} به {config.office_address} بیایید. "
+                "کارشناسی برای فروشنده رایگان است."
+            ),
         }
-        send_booking_sms(sid)
-        call_manager.end_call(sid)
-    return JSONResponse({"ok": True, "appointment": appt})
+    )
 
 
 @app.get("/api/appointments")
 def api_appointments() -> list[dict]:
-    return db.list_appointments()
+    return db.list_inspections()
 
 
 @app.post("/api/simulate")
 async def api_simulate(request: Request) -> JSONResponse:
-    """Text-in / text-out conversation for local testing without Twilio."""
     body = await request.json()
     session_id = str(body.get("session_id") or "demo-local")
     text = str(body.get("text") or "")
     if call_manager.get(session_id) is None:
-        call_manager.start_call(
-            session_id, from_number=str(body.get("phone") or "")
-        )
+        call_manager.start_call(session_id, from_number=str(body.get("phone") or ""))
         if not text:
             return JSONResponse(
                 {
                     "reply": call_manager.greeting(),
-                    "phase": "ask_service",
+                    "phase": "ask_type",
                     "intent": "continue",
                     "patient_info": {},
                     "appointment_id": None,
                     "call_sid": session_id,
+                    "address": config.office_address,
                 }
             )
     phone = str(body.get("phone") or "")
@@ -230,11 +184,6 @@ async def api_simulate(request: Request) -> JSONResponse:
     result = call_manager.handle_user_text(session_id, text)
     if result.get("intent") == "book":
         result["sms"] = send_booking_sms(session_id)
-    if result.get("intent") == "transfer":
-        result["transfer"] = start_warm_transfer(session_id)
-        extra = (result["transfer"] or {}).get("reply_extra")
-        if extra:
-            result["reply"] = f"{result.get('reply', '')} {extra}".strip()
     return JSONResponse(result)
 
 
@@ -244,12 +193,11 @@ async def api_simulate_reset(request: Request) -> JSONResponse:
     session_id = str(body.get("session_id") or "demo-local")
     call_manager.end_call(session_id)
     call_manager.start_call(session_id, from_number=str(body.get("phone") or ""))
-    return JSONResponse({"ok": True, "reply": call_manager.greeting(), "phase": "ask_service"})
+    return JSONResponse({"ok": True, "reply": call_manager.greeting(), "phase": "ask_type"})
 
 
 @app.post("/sip/turn")
 async def sip_turn_endpoint(request: Request) -> JSONResponse:
-    """One dialogue turn for an Iranian Asterisk/SIP PBX."""
     body = await request.json()
     result = sip_turn(
         str(body.get("session_id") or body.get("call_id") or "sip-local"),

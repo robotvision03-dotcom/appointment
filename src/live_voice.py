@@ -7,7 +7,7 @@ import json
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from src.call_manager import PHASE_ASK_SERVICE, call_manager
+from src.call_manager import PHASE_ASK_TYPE, call_manager
 from src.config import config
 from src.handoff import start_warm_transfer
 from src.sms import send_booking_sms
@@ -62,7 +62,8 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                     )
                     if phone:
                         state.from_number = phone
-                    state.phase = PHASE_ASK_SERVICE
+                    if not state.context:
+                        state.phase = PHASE_ASK_TYPE
                     log.info(
                         "Browser voice start sid=%s sample_rate=%s stt=%s",
                         call_sid,
@@ -71,7 +72,7 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                     )
                     greeting = call_manager.greeting()
                     if not state.context:
-                        await _send_assistant(websocket, greeting, "ask_service", "continue")
+                        await _send_assistant(websocket, greeting, "ask_type", "continue")
                     await websocket.send_json(
                         {
                             "event": "status",

@@ -3,256 +3,273 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>اتصال مشتری به سرویس‌دهنده</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect rx='12' width='64' height='64' fill='%233dbea5'/></svg>" />
+  <title>دفتر کارشناسی خودرو</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect rx='12' width='64' height='64' fill='%23e31c5f'/></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0f1419;
-      --panel: #1a2332;
-      --panel-2: #243044;
-      --ink: #e8eef7;
-      --muted: #93a4bb;
-      --accent: #3dbea5;
-      --accent-2: #f0c36a;
-      --danger: #e07a7a;
-      --line: #314057;
+      --ink: #222222;
+      --muted: #717171;
+      --line: #dddddd;
+      --bg: #f7f7f7;
+      --card: #ffffff;
+      --pink: #e31c5f;
+      --pink-dark: #c2154e;
+      --green: #008a05;
+      --shadow: 0 6px 16px rgba(0,0,0,.12);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: Vazirmatn, Tahoma, sans-serif;
-      background: radial-gradient(1200px 600px at 80% -10%, #1e3a34 0%, transparent 50%),
-                  radial-gradient(900px 500px at -10% 110%, #2a3348 0%, transparent 55%),
-                  var(--bg);
+      background: var(--bg);
       color: var(--ink);
-      min-height: 100vh;
     }
     header {
-      padding: 1.25rem 1.5rem 0.5rem;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      padding: 0.9rem 1.4rem;
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
       gap: 1rem;
       flex-wrap: wrap;
+      align-items: center;
     }
-    h1 { margin: 0; font-size: 1.35rem; font-weight: 700; }
-    .sub { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
-    .pills { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 1.2rem; }
+    .sub { color: var(--muted); font-size: 0.88rem; margin-top: 0.2rem; }
+    .pills { display: flex; gap: 0.35rem; flex-wrap: wrap; }
     .pill {
-      font-size: 0.75rem;
-      padding: 0.25rem 0.6rem;
+      font-size: 0.72rem;
+      padding: 0.2rem 0.55rem;
       border-radius: 999px;
-      background: var(--panel);
       border: 1px solid var(--line);
+      background: #fff;
     }
-    .pill.ok { border-color: var(--accent); color: var(--accent); }
-    .pill.off { border-color: var(--danger); color: var(--danger); }
+    .pill.ok { color: var(--green); border-color: #b8e0b8; }
+    .pill.off { color: var(--pink); }
     main {
       display: grid;
-      grid-template-columns: 1.4fr 1fr;
-      gap: 1rem;
-      padding: 1rem 1.5rem 2rem;
+      grid-template-columns: 1.15fr 0.95fr;
+      gap: 1.1rem;
+      padding: 1.1rem 1.4rem 2rem;
+      max-width: 1180px;
+      margin: 0 auto;
     }
-    @media (max-width: 900px) {
-      main { grid-template-columns: 1fr; padding: 1rem; }
+    @media (max-width: 920px) {
+      main { grid-template-columns: 1fr; padding: 0.8rem; }
     }
     .card {
-      background: color-mix(in srgb, var(--panel) 88%, transparent);
-      border: 1px solid var(--line);
+      background: var(--card);
       border-radius: 16px;
-      padding: 1rem;
-      min-height: 0;
+      box-shadow: var(--shadow);
+      padding: 1rem 1.1rem 1.2rem;
     }
-    .card h2 { margin: 0 0 0.75rem; font-size: 1rem; }
+    .card h2 { margin: 0 0 0.7rem; font-size: 1.02rem; }
     #log {
-      height: min(58vh, 520px);
+      height: min(46vh, 420px);
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 0.6rem;
-      padding: 0.25rem;
+      gap: 0.55rem;
     }
     .msg {
-      max-width: 85%;
-      padding: 0.65rem 0.85rem;
-      border-radius: 14px;
-      line-height: 1.7;
+      max-width: 88%;
+      padding: 0.65rem 0.8rem;
+      border-radius: 16px;
+      line-height: 1.75;
       font-size: 0.95rem;
     }
-    .msg.agent { background: var(--panel-2); align-self: flex-start; }
-    .msg.user { background: #1f4a43; align-self: flex-end; }
-    .msg .meta { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.15rem; }
-    form.composer {
-      display: flex;
-      gap: 0.5rem;
-      margin-top: 0.75rem;
-      flex-wrap: wrap;
-    }
-    form.composer input[type=text], form.composer input[type=tel] {
-      flex: 1;
-      min-width: 140px;
-    }
-    button.live.on {
-      background: var(--danger);
-      color: #fff;
-    }
-    .transfer-box {
-      margin-top: 0.6rem;
-      padding: 0.7rem 0.85rem;
-      border: 1px dashed var(--accent-2);
-      border-radius: 10px;
-      background: #2a2618;
-      font-size: 0.9rem;
-      line-height: 1.7;
-    }
-    .transfer-box a { color: var(--accent); }
-    input[type=text] {
-      flex: 1;
-      background: var(--bg);
-      border: 1px solid var(--line);
-      color: var(--ink);
-      border-radius: 10px;
-      padding: 0.7rem 0.85rem;
+    .msg.agent { background: #f2f2f2; align-self: flex-start; border-bottom-right-radius: 4px; }
+    .msg.user { background: #ffe8ef; align-self: flex-end; border-bottom-left-radius: 4px; }
+    .msg .meta { font-size: 0.68rem; color: var(--muted); margin-bottom: 0.12rem; }
+    form.composer { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.75rem; }
+    input, select, button {
       font-family: inherit;
-      font-size: 1rem;
+      font-size: 0.95rem;
+    }
+    input[type=text], input[type=tel], input[type=number] {
+      flex: 1;
+      min-width: 120px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.7rem 0.8rem;
     }
     button {
-      font-family: inherit;
-      background: var(--accent);
-      color: #06221c;
+      background: var(--pink);
+      color: #fff;
       border: 0;
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 0.7rem 1rem;
       font-weight: 700;
       cursor: pointer;
     }
     button.secondary {
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    button.live.on { background: #222; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .hint { color: var(--muted); font-size: 0.82rem; margin: 0.55rem 0 0; }
+    .free {
+      background: #eefaf0;
+      color: #1b6b22;
+      border-radius: 12px;
+      padding: 0.65rem 0.8rem;
+      font-size: 0.88rem;
+      margin-bottom: 0.8rem;
+    }
+    .cal-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.6rem;
+    }
+    .cal-nav strong { font-size: 1rem; }
+    .weekdays, .weeks { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .weekdays span {
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--muted);
+      padding: 0.25rem 0;
+    }
+    .day {
+      aspect-ratio: 1;
+      border: 0;
       background: transparent;
       color: var(--ink);
-      border: 1px solid var(--line);
+      border-radius: 50%;
+      font-weight: 600;
+      position: relative;
     }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: right; padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--line); }
+    .day:hover:not(:disabled) { background: #f7f7f7; }
+    .day.sel { background: var(--ink); color: #fff; }
+    .day.today:not(.sel) { border: 1px solid var(--ink); }
+    .day.closed, .day:disabled { color: #d0d0d0; }
+    .day .dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--pink); position: absolute; bottom: 5px; left: 50%;
+      transform: translateX(-50%);
+    }
+    .day.sel .dot { background: #fff; }
+    .times {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.45rem;
+      margin-top: 0.75rem;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .times button {
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid var(--ink);
+      font-weight: 600;
+    }
+    .times button.busy {
+      border-color: var(--line);
+      color: #bbb;
+      text-decoration: line-through;
+    }
+    .times button.pick { background: var(--ink); color: #fff; }
+    label.mini { display: block; font-size: 0.78rem; color: var(--muted); margin: 0.45rem 0 0.15rem; }
+    .book-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+    @media (max-width: 520px) { .book-grid { grid-template-columns: 1fr; } }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { text-align: right; padding: 0.4rem 0.25rem; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-weight: 500; }
-    .empty { color: var(--muted); padding: 0.75rem 0; }
-    .row-actions { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
-    .book-form label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.45rem 0 0.2rem; }
-    .book-form input, .book-form select {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--line);
-      color: var(--ink);
-      border-radius: 10px;
-      padding: 0.55rem 0.7rem;
-      font-family: inherit;
-      font-size: 0.95rem;
-    }
-    .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.4rem 0 0.8rem; }
-    .chip, .provider {
-      font-family: inherit;
-      background: var(--bg);
-      color: var(--ink);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 0.45rem 0.7rem;
-      cursor: pointer;
-      font-weight: 500;
-    }
-    .chip.sel, .provider.sel { border-color: var(--accent); color: var(--accent); }
-    .provider { width: 100%; text-align: right; }
-    .provider small { color: var(--muted); display: block; font-weight: 400; }
+    .empty { color: var(--muted); padding: 0.5rem 0; }
+    .okmsg { color: var(--green); font-size: 0.88rem; margin-top: 0.4rem; }
+    .errmsg { color: var(--pink); font-size: 0.88rem; margin-top: 0.4rem; }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1>اتصال مشتری به سرویس‌دهنده</h1>
-      <p class="sub">در شروع از شما نوع سرویس پرسیده می‌شود. مثلاً بگویید آرایشگاه. سپس فروشنده را انتخاب کنید تا برای قرار ملاقات با او صحبت کنید. اگر جواب نداد، شماره‌اش برایتان پیامک می‌شود.</p>
+      <h1>دفتر کارشناسی و خرید خودرو</h1>
+      <p class="sub" id="addr">خیابان ایثار، کوچه خواجه پلاک ۲ — نوبت‌های نیم‌ساعته</p>
     </div>
     <div class="pills" id="status"></div>
   </header>
   <main>
     <section class="card">
       <h2>گفتگو با منشی</h2>
+      <div class="free">کارشناسی و تعیین قیمت برای فروشنده رایگان است. خودرو را به دفتر بیاورید.</div>
       <div id="log"></div>
       <form class="composer" id="form">
         <button type="button" class="secondary" id="reset">تماس جدید</button>
         <button type="button" class="secondary" id="live">شروع تماس صوتی</button>
-        <input type="tel" id="phone" placeholder="موبایل برای پیامک (۰۹۱۲…)" inputmode="tel" />
-        <input type="text" id="text" placeholder="پیام خود را به فارسی بنویسید…" autocomplete="off" />
+        <input type="tel" id="phone" placeholder="موبایل (۰۹۱۲…)" inputmode="tel" />
+        <input type="text" id="text" placeholder="مثلاً پژو پارس" autocomplete="off" />
         <button type="submit">ارسال</button>
       </form>
-      <div id="transfer" hidden class="transfer-box"></div>
-      <p class="hint">با «شروع تماس صوتی» حرف بزنید؛ متن شنیده‌شده در همین کادر نوشته می‌شود. اگر خالی ماند، همان را تایپ کنید. نرم‌افزار حرف نمی‌زند.</p>
+      <p class="hint">منشی می‌پرسد نوع خودرو، مدل/سال ساخت، کارکرد و نام شما را. بعد از روی تقویم یک نوبت نیم‌ساعته خالی رزرو می‌شود.</p>
     </section>
     <div>
       <section class="card">
-        <h2>انتخاب سرویس</h2>
-        <div class="chips" id="services"></div>
-        <div id="providers" class="empty">ابتدا نوع سرویس را انتخاب کنید.</div>
-        <form class="book-form" id="connect-form">
-          <label>نام شما (اختیاری)</label>
-          <input type="text" id="cf-name" placeholder="علی رضایی" />
-          <label>موبایل شما</label>
-          <input type="tel" id="cf-phone" required placeholder="0912…" />
-          <button type="submit" style="margin-top:0.85rem;width:100%">تماس با سرویس‌دهنده</button>
-          <div id="cf-msg"></div>
-        </form>
-      </section>
-      <section class="card" style="margin-top:1rem">
-        <div class="row-actions">
-          <h2 style="flex:1;margin:0">درخواست‌ها</h2>
-          <button type="button" class="secondary" id="refresh-req">بروزرسانی</button>
+        <div class="cal-nav">
+          <button type="button" class="secondary" id="prev-m">ماه قبل</button>
+          <strong id="month-title">تقویم دفتر</strong>
+          <button type="button" class="secondary" id="next-m">ماه بعد</button>
         </div>
-        <div id="requests" class="empty">هنوز درخواستی نیست.</div>
-      </section>
-      <section class="card" style="margin-top:1rem">
-        <h2>ثبت نوبت پزشکی (اختیاری)</h2>
-        <form class="book-form" id="book-form">
-          <label>نام و نام خانوادگی</label>
-          <input type="text" id="bf-name" required placeholder="علی رضایی" />
-          <label>موبایل (اختیاری، برای پیامک)</label>
-          <input type="tel" id="bf-phone" placeholder="0912…" />
-          <label>پزشک</label>
-          <select id="bf-doctor" required></select>
-          <label>تاریخ</label>
-          <input type="date" id="bf-date" required />
-          <label>ساعت</label>
-          <select id="bf-time" required>
-            <option value="">ابتدا تاریخ را انتخاب کنید</option>
-          </select>
-          <button type="submit" style="margin-top:0.85rem;width:100%">ثبت نوبت</button>
-          <div id="bf-msg"></div>
+        <div class="weekdays" id="weekdays"></div>
+        <div class="weeks" id="weeks"></div>
+        <p class="hint" id="day-label">یک روز باز را انتخاب کنید تا ساعت‌های خالی نیم‌ساعته دیده شود.</p>
+        <div class="times" id="times"></div>
+        <form id="quick-book">
+          <div class="book-grid">
+            <div>
+              <label class="mini">نام فروشنده</label>
+              <input type="text" id="qb-name" required placeholder="علی رضایی" />
+            </div>
+            <div>
+              <label class="mini">موبایل</label>
+              <input type="tel" id="qb-phone" placeholder="0912…" />
+            </div>
+            <div>
+              <label class="mini">برند</label>
+              <input type="text" id="qb-make" required placeholder="پژو" list="makes" />
+            </div>
+            <div>
+              <label class="mini">مدل</label>
+              <input type="text" id="qb-model" required placeholder="پارس" />
+            </div>
+            <div>
+              <label class="mini">سال ساخت</label>
+              <input type="text" id="qb-year" placeholder="۱۳۹۹" />
+            </div>
+            <div>
+              <label class="mini">کارکرد (کیلومتر)</label>
+              <input type="number" id="qb-km" min="0" placeholder="80000" />
+            </div>
+          </div>
+          <datalist id="makes"></datalist>
+          <button type="submit" style="margin-top:0.75rem;width:100%">رزرو نوبت انتخاب‌شده</button>
+          <div id="qb-msg"></div>
         </form>
       </section>
       <section class="card" style="margin-top:1rem">
-        <h2>پزشکان</h2>
-        <div id="doctors" class="empty">در حال بارگذاری…</div>
-      </section>
-      <section class="card" style="margin-top:1rem">
-        <div class="row-actions">
-          <h2 style="flex:1;margin:0">نوبت‌ها</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
+          <h2 style="margin:0">نوبت‌های دفتر</h2>
           <button type="button" class="secondary" id="refresh">بروزرسانی</button>
         </div>
-        <div id="appts" class="empty">هنوز نوبتی ثبت نشده است.</div>
+        <div id="appts" class="empty">هنوز نوبتی نیست.</div>
       </section>
     </div>
   </main>
   <script>
+    const MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
     const sessionId = "demo-" + Math.random().toString(36).slice(2, 8);
     const logEl = document.getElementById("log");
     const textEl = document.getElementById("text");
     const phoneEl = document.getElementById("phone");
     const liveBtn = document.getElementById("live");
-    const GREETING = "وقت بخیر چه سرویسی را نیاز دارید؟";
-    let liveWs = null;
-    let liveCtx = null;
-    let liveStream = null;
-    let healthInfo = {};
-    let selectedServiceId = null;
-    let selectedProviderId = null;
+    let liveWs = null, liveCtx = null, liveStream = null;
+    let cal = { year: null, month: null };
+    let selectedDate = null;
+    let selectedTime = null;
+    let lastInfo = {};
 
     function addMsg(role, text, meta) {
       const div = document.createElement("div");
@@ -264,256 +281,179 @@
     function escapeHtml(s) {
       return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
     }
-    function showConnect(c) {
-      if (!c) return;
-      const box = document.getElementById("transfer");
-      box.hidden = false;
-      const p = c.provider || {};
-      const telP = c.tel_provider || ("tel:" + (p.phone || ""));
-      const telC = c.tel_customer || "";
-      const callOk = c.call && c.call.ok;
-      const dry = (c.call && c.call.dry_run) || (c.sms_to_customer && c.sms_to_customer.dry_run);
-      const cs = c.sms_to_customer || {};
-      const custSms = cs.ok ? "ارسال شد" : (cs.dry_run ? "آزمایشی (کلید کاوه‌نگار نیست)" : (cs.reason === "not_needed" ? "لازم نبود" : "ناموفق"));
-      box.innerHTML = `<strong>اتصال برای قرار ملاقات با ${escapeHtml(p.name || "سرویس‌دهنده")}</strong><br>
-        تماس با فروشنده: ${callOk ? "ارسال شد — گوشی را بردارید و صحبت کنید" : (dry ? "آزمایشی — کلید کاوه‌نگار نیست" : "بی‌پاسخ")}
-        · پیامک شماره فروشنده برای شما: ${custSms}<br>
-        <a href="${escapeHtml(telP)}">تماس با فروشنده: ${escapeHtml(p.phone || "")}</a>
-        ${telC ? `<br><a href="${escapeHtml(telC)}">تماس با مشتری</a>` : ""}`;
-    }
-    function showTransfer(t) {
-      if (!t) return;
-      const box = document.getElementById("transfer");
-      box.hidden = false;
-      const num = t.receptionist_number || "";
-      box.innerHTML = `<strong>انتقال به منشی انسان</strong><br>${escapeHtml(t.summary || "")}<br>
-        <a href="tel:${escapeHtml(num)}">تماس با منشی: ${escapeHtml(num)}</a>`;
-    }
 
     async function health() {
       const h = await fetch("/health").then(r => r.json());
-      healthInfo = h;
+      if (h.office && h.office.address) {
+        document.getElementById("addr").textContent =
+          h.office.address + " — نوبت‌های نیم‌ساعته، جمعه تعطیل";
+      }
       const pills = [
-        ["شنوا (گفتار بیمار)", h.stt && h.stt.available],
-        ["Ollama", h.llm && h.llm.available],
-        ["پیامک کاوه‌نگار", h.sms && h.sms.available],
+        ["شنوا", h.stt && h.stt.available],
+        ["خودرو در فهرست", true],
+        ["پیامک", h.sms && h.sms.available],
       ];
       document.getElementById("status").innerHTML = pills.map(([n, ok]) =>
-        `<span class="pill ${ok ? "ok" : "off"}" title="${n === "Ollama" && h.llm && h.llm.error ? escapeHtml(h.llm.error) : ""}">${n}: ${ok ? "فعال" : "غیرفعال"}</span>`
+        `<span class="pill ${ok ? "ok" : "off"}">${n}: ${ok ? "فعال" : "غیرفعال"}</span>`
       ).join("");
-    }
-
-    async function loadServices() {
-      const list = await fetch("/api/services").then(r => r.json());
-      const el = document.getElementById("services");
-      el.innerHTML = list.map(s =>
-        `<button type="button" class="chip" data-id="${s.id}">${s.name}</button>`
-      ).join("");
-      el.querySelectorAll(".chip").forEach(btn => {
-        btn.addEventListener("click", () => selectService(Number(btn.dataset.id)));
-      });
-    }
-
-    async function selectService(id) {
-      selectedServiceId = id;
-      selectedProviderId = null;
-      document.querySelectorAll("#services .chip").forEach(b => {
-        b.classList.toggle("sel", Number(b.dataset.id) === id);
-      });
-      const rows = await fetch("/api/providers?service_id=" + id).then(r => r.json());
-      const el = document.getElementById("providers");
-      if (!rows.length) {
-        el.innerHTML = `<div class="empty">سرویس‌دهنده‌ای نیست.</div>`;
-        return;
-      }
-      el.innerHTML = rows.map(p =>
-        `<button type="button" class="provider" data-id="${p.id}">
-           ${p.name}<small>${p.area || ""} · ${p.phone}</small>
-         </button>`
-      ).join("");
-      el.querySelectorAll(".provider").forEach(btn => {
-        btn.addEventListener("click", () => {
-          selectedProviderId = Number(btn.dataset.id);
-          el.querySelectorAll(".provider").forEach(x => x.classList.remove("sel"));
-          btn.classList.add("sel");
-        });
-      });
-      const first = el.querySelector(".provider");
-      if (first) first.click();
-    }
-
-    async function loadRequests() {
-      const rows = await fetch("/api/requests").then(r => r.json());
-      const el = document.getElementById("requests");
-      if (!rows.length) { el.innerHTML = `<div class="empty">هنوز درخواستی نیست.</div>`; return; }
-      el.innerHTML = `<table><thead><tr><th>سرویس</th><th>فروشنده</th><th>مشتری</th><th>تماس</th></tr></thead><tbody>` +
-        rows.map(r => `<tr><td>${r.service_name}</td><td>${r.provider_name}</td><td>${r.customer_phone}</td><td>${r.call_status}</td></tr>`).join("") +
-        `</tbody></table>`;
-    }
-
-    async function loadDoctors() {
-      const docs = await fetch("/api/doctors").then(r => r.json());
-      document.getElementById("doctors").innerHTML =
-        `<table><thead><tr><th>نام</th><th>تخصص</th></tr></thead><tbody>` +
-        docs.map(d => `<tr><td>${d.name}</td><td>${d.specialty}</td></tr>`).join("") +
-        `</tbody></table>`;
-      const sel = document.getElementById("bf-doctor");
-      sel.innerHTML = `<option value="">انتخاب پزشک</option>` +
-        docs.map(d => `<option value="${d.id}">${d.name} — ${d.specialty}</option>`).join("");
-    }
-
-    async function refreshSlots() {
-      const doctorId = document.getElementById("bf-doctor").value;
-      const date = document.getElementById("bf-date").value;
-      const timeSel = document.getElementById("bf-time");
-      if (!doctorId || !date) {
-        timeSel.innerHTML = `<option value="">ابتدا پزشک و تاریخ</option>`;
-        return;
-      }
-      const data = await fetch(`/api/slots?doctor_id=${doctorId}&date=${date}`).then(r => r.json());
-      const slots = data.slots || [];
-      timeSel.innerHTML = slots.length
-        ? slots.map(s => `<option value="${s}">${s}</option>`).join("")
-        : `<option value="">ساعت خالی نیست</option>`;
-    }
-
-    async function loadAppts() {
-      const rows = await fetch("/api/appointments").then(r => r.json());
-      const el = document.getElementById("appts");
-      if (!rows.length) { el.innerHTML = `<div class="empty">هنوز نوبتی ثبت نشده است.</div>`; return; }
-      el.innerHTML = `<table><thead><tr><th>کد</th><th>بیمار</th><th>پزشک</th><th>تاریخ</th><th>ساعت</th></tr></thead><tbody>` +
-        rows.map(a => `<tr><td>${a.id}</td><td>${a.patient_name}</td><td>${a.doctor_name}</td><td>${a.date}</td><td>${a.time}</td></tr>`).join("") +
-        `</tbody></table>`;
-    }
-
-    function applyAssistant(res) {
-      addMsg("agent", res.reply || res.text, "منشی · " + (res.phase || ""));
-      if (res.transfer) showTransfer(res.transfer);
-      if (res.connect) showConnect(res.connect);
-      loadAppts();
-      loadRequests();
     }
 
     async function send(text) {
-      if (liveWs && liveWs.readyState === 1) {
-        liveWs.send(JSON.stringify({ event: "text", text, phone: phoneEl.value.trim() }));
-        return;
-      }
-      try {
-        const res = await fetch("/api/simulate", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({ session_id: sessionId, text, phone: phoneEl.value.trim() }),
-          signal: AbortSignal.timeout(20000),
-        }).then(r => r.json());
-        applyAssistant(res);
-      } catch (err) {
-        addMsg("agent", "ارتباط با سرور برقرار نشد. صفحه را تازه کنید.", "سیستم");
-        console.error(err);
-      }
+      const res = await fetch("/api/simulate", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ session_id: sessionId, text, phone: phoneEl.value.trim() }),
+      }).then(r => r.json());
+      addMsg("agent", res.reply, "منشی · " + (res.phase || ""));
+      lastInfo = res.patient_info || {};
+      if (lastInfo.make) document.getElementById("qb-make").value = lastInfo.make;
+      if (lastInfo.model) document.getElementById("qb-model").value = lastInfo.model;
+      if (lastInfo.year) document.getElementById("qb-year").value = lastInfo.year;
+      if (lastInfo.km) document.getElementById("qb-km").value = lastInfo.km;
+      if (lastInfo.seller_name) document.getElementById("qb-name").value = lastInfo.seller_name;
+      if (res.appointment_id) loadAppts();
+      if (res.calendar || res.offered_slots) loadCalendar();
     }
 
     document.getElementById("form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const t = textEl.value.trim();
       if (!t) return;
-      addMsg("user", t);
+      addMsg("user", t, "شما");
       textEl.value = "";
+      if (liveWs && liveWs.readyState === 1) {
+        liveWs.send(JSON.stringify({ event: "text", text: t, phone: phoneEl.value.trim() }));
+        return;
+      }
       await send(t);
     });
 
     document.getElementById("reset").addEventListener("click", async () => {
       await stopLive();
       logEl.innerHTML = "";
-      document.getElementById("transfer").hidden = true;
-      addMsg("agent", GREETING, "منشی · تماس جدید");
-      textEl.focus();
-      try {
-        await fetch("/api/simulate/reset", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({ session_id: sessionId, phone: phoneEl.value.trim() }),
-        });
-      } catch (err) {
-        console.error(err);
-      }
+      lastInfo = {};
+      await fetch("/api/simulate/reset", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ session_id: sessionId, phone: phoneEl.value.trim() }),
+      }).then(r => r.json()).then(res => addMsg("agent", res.reply, "منشی · تماس جدید"));
     });
-    document.getElementById("refresh").addEventListener("click", loadAppts);
-    document.getElementById("refresh-req").addEventListener("click", loadRequests);
-    document.getElementById("connect-form").addEventListener("submit", async (e) => {
+
+    document.getElementById("weekdays").innerHTML =
+      ["ش","ی","د","س","چ","پ","ج"].map(d => `<span>${d}</span>`).join("");
+
+    async function loadCalendar() {
+      const q = cal.year ? `?year=${cal.year}&month=${cal.month}` : "";
+      const data = await fetch("/api/calendar" + q).then(r => r.json());
+      cal.year = data.year;
+      cal.month = data.month;
+      document.getElementById("month-title").textContent = MONTHS[data.month - 1] + " " + data.year;
+      const weeks = document.getElementById("weeks");
+      weeks.innerHTML = "";
+      data.weeks.flat().forEach(cell => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "day";
+        if (!cell) { btn.disabled = true; weeks.appendChild(btn); return; }
+        btn.textContent = cell.jalali_day;
+        if (!cell.open) { btn.classList.add("closed"); btn.disabled = true; }
+        if (cell.today) btn.classList.add("today");
+        if (cell.date === selectedDate) btn.classList.add("sel");
+        if (cell.free_count > 0) {
+          const dot = document.createElement("span");
+          dot.className = "dot";
+          btn.appendChild(dot);
+        }
+        btn.addEventListener("click", () => selectDay(cell.date));
+        weeks.appendChild(btn);
+      });
+    }
+
+    async function selectDay(iso) {
+      selectedDate = iso;
+      selectedTime = null;
+      await loadCalendar();
+      const data = await fetch("/api/slots?date=" + encodeURIComponent(iso)).then(r => r.json());
+      document.getElementById("day-label").textContent =
+        "ساعت‌های نیم‌ساعته " + iso + " — صورتی یعنی خالی";
+      const box = document.getElementById("times");
+      box.innerHTML = "";
+      (data.all || []).forEach(t => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = t;
+        const free = (data.slots || []).includes(t);
+        if (!free) { b.className = "busy"; b.disabled = true; }
+        b.addEventListener("click", () => {
+          selectedTime = t;
+          [...box.querySelectorAll("button")].forEach(x => x.classList.remove("pick"));
+          b.classList.add("pick");
+        });
+        box.appendChild(b);
+      });
+      if (!(data.all || []).length) box.innerHTML = "<p class='empty'>این روز دفتر باز نیست.</p>";
+    }
+
+    document.getElementById("prev-m").addEventListener("click", () => {
+      cal.month -= 1;
+      if (cal.month < 1) { cal.month = 12; cal.year -= 1; }
+      loadCalendar();
+    });
+    document.getElementById("next-m").addEventListener("click", () => {
+      cal.month += 1;
+      if (cal.month > 12) { cal.month = 1; cal.year += 1; }
+      loadCalendar();
+    });
+
+    document.getElementById("quick-book").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const msg = document.getElementById("cf-msg");
-      msg.className = "";
-      if (!selectedProviderId) {
-        msg.className = "err";
-        msg.textContent = "ابتدا سرویس و سرویس‌دهنده را انتخاب کنید.";
+      const msg = document.getElementById("qb-msg");
+      if (!selectedDate || !selectedTime) {
+        msg.className = "errmsg";
+        msg.textContent = "از تقویم روز و ساعت خالی را انتخاب کنید.";
         return;
       }
-      msg.textContent = "در حال تماس…";
-      const customerPhone = document.getElementById("cf-phone").value.trim();
-      if (customerPhone) phoneEl.value = customerPhone;
-      try {
-        const res = await fetch("/api/connect", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            provider_id: selectedProviderId,
-            customer_name: document.getElementById("cf-name").value.trim(),
-            customer_phone: customerPhone,
-          }),
-          signal: AbortSignal.timeout(20000),
-        }).then(r => r.json());
-        if (res.ok) {
-          msg.className = "ok";
-          const p = res.provider || {};
-          msg.textContent = `درخواست ثبت شد. ${p.name} — تماس ${res.call && res.call.ok ? "ارسال شد" : "آزمایشی/ناموفق"}، پیامک ${res.sms && res.sms.ok ? "ارسال شد" : "آزمایشی/ناموفق"}`;
-          showConnect(res);
-          loadRequests();
-        } else {
-          msg.className = "err";
-          msg.textContent = res.error || "اتصال انجام نشد.";
-        }
-      } catch (err) {
-        msg.className = "err";
-        msg.textContent = "ارتباط با سرور قطع شد. دوباره تلاش کنید.";
-        console.error(err);
-      }
-    });
-    document.getElementById("bf-doctor").addEventListener("change", refreshSlots);
-    document.getElementById("bf-date").addEventListener("change", refreshSlots);
-    const d0 = new Date();
-    d0.setDate(d0.getDate() + 1);
-    document.getElementById("bf-date").value = d0.toISOString().slice(0, 10);
-
-    document.getElementById("book-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const msg = document.getElementById("bf-msg");
-      msg.className = "";
-      msg.textContent = "در حال ثبت…";
       const res = await fetch("/api/book", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
-          patient_name: document.getElementById("bf-name").value.trim(),
-          phone: document.getElementById("bf-phone").value.trim(),
-          doctor_id: document.getElementById("bf-doctor").value,
-          date: document.getElementById("bf-date").value,
-          time: document.getElementById("bf-time").value,
+          seller_name: document.getElementById("qb-name").value,
+          phone: document.getElementById("qb-phone").value || phoneEl.value,
+          make: document.getElementById("qb-make").value,
+          model: document.getElementById("qb-model").value,
+          year: document.getElementById("qb-year").value,
+          km: document.getElementById("qb-km").value,
+          date: selectedDate,
+          time: selectedTime,
         }),
       }).then(r => r.json());
       if (res.ok) {
-        msg.className = "ok";
-        const a = res.appointment || {};
-        msg.textContent = `ثبت شد. کد ${a.id} — ${a.doctor_name} — ${a.date} ${a.time}`;
+        msg.className = "okmsg";
+        msg.textContent = res.message;
+        selectedTime = null;
+        loadCalendar();
+        if (selectedDate) selectDay(selectedDate);
         loadAppts();
-        refreshSlots();
       } else {
-        msg.className = "err";
-        msg.textContent = res.error || "ثبت نشد.";
+        msg.className = "errmsg";
+        msg.textContent = res.error || "رزرو نشد.";
       }
     });
 
-    /** Average-pool resample to 16 kHz (Shenava / sherpa-onnx). */
+    async function loadAppts() {
+      const rows = await fetch("/api/appointments").then(r => r.json());
+      const el = document.getElementById("appts");
+      if (!rows.length) { el.className = "empty"; el.textContent = "هنوز نوبتی نیست."; return; }
+      el.className = "";
+      el.innerHTML = `<table><thead><tr><th>فروشنده</th><th>خودرو</th><th>وقت</th></tr></thead><tbody>${
+        rows.map(a => `<tr><td>${escapeHtml(a.seller_name)}</td><td>${escapeHtml((a.make||"")+" "+(a.model||""))}<br><small>${escapeHtml(a.year||"")} ${a.km ? a.km+" کیلومتر" : ""}</small></td><td>${escapeHtml(a.jalali||a.date)}<br>${a.time}</td></tr>`).join("")
+      }</tbody></table>`;
+    }
+
+    fetch("/api/cars/makes").then(r => r.json()).then(makes => {
+      document.getElementById("makes").innerHTML = makes.map(m => `<option value="${escapeHtml(m)}">`).join("");
+    });
+
     function downsampleTo16k(float32, inRate) {
       const target = 16000;
       if (!inRate || inRate <= target + 50) return float32;
@@ -523,15 +463,12 @@
       for (let i = 0; i < outLen; i++) {
         const start = Math.floor(i * ratio);
         const end = Math.min(float32.length, Math.floor((i + 1) * ratio));
-        let sum = 0;
-        const n = Math.max(1, end - start);
+        let sum = 0, n = Math.max(1, end - start);
         for (let j = start; j < end; j++) sum += float32[j];
         out[i] = sum / n;
       }
       return out;
     }
-
-    /** WebSocket PCM must be little-endian Int16, not Float32. */
     function floatToPcm16(float32) {
       const pcm = new Int16Array(float32.length);
       for (let i = 0; i < float32.length; i++) {
@@ -540,57 +477,42 @@
       }
       return pcm;
     }
-
     async function stopLive() {
       if (liveWs) {
         try { liveWs.send(JSON.stringify({ event: "stop" })); liveWs.close(); } catch (e) {}
         liveWs = null;
       }
-      if (liveStream) {
-        liveStream.getTracks().forEach(t => t.stop());
-        liveStream = null;
-      }
-      if (liveCtx) {
-        try { await liveCtx.close(); } catch (e) {}
-        liveCtx = null;
-      }
+      if (liveStream) { liveStream.getTracks().forEach(t => t.stop()); liveStream = null; }
+      if (liveCtx) { try { await liveCtx.close(); } catch (e) {} liveCtx = null; }
       liveBtn.textContent = "شروع تماس صوتی";
       liveBtn.classList.remove("on");
     }
-
     liveBtn.addEventListener("click", async () => {
       if (liveWs) { await stopLive(); return; }
       const proto = location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${proto}://${location.host}/voice/live`);
       liveWs = ws;
       ws.binaryType = "arraybuffer";
-        ws.onopen = async () => {
+      ws.onopen = async () => {
         liveBtn.textContent = "قطع تماس صوتی";
         liveBtn.classList.add("on");
         try {
           liveStream = await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
           });
-          try {
-            liveCtx = new AudioContext({ sampleRate: 16000 });
-          } catch (e) {
-            liveCtx = new AudioContext();
-          }
+          try { liveCtx = new AudioContext({ sampleRate: 16000 }); }
+          catch (e) { liveCtx = new AudioContext(); }
           await liveCtx.resume();
           const inRate = liveCtx.sampleRate || 48000;
           ws.send(JSON.stringify({
-            event: "start",
-            session_id: sessionId,
-            phone: phoneEl.value.trim(),
-            sample_rate: 16000,
-            encoding: "pcm_s16le",
+            event: "start", session_id: sessionId, phone: phoneEl.value.trim(),
+            sample_rate: 16000, encoding: "pcm_s16le",
           }));
           const src = liveCtx.createMediaStreamSource(liveStream);
           const proc = liveCtx.createScriptProcessor(4096, 1, 1);
           proc.onaudioprocess = (ev) => {
             if (!liveWs || liveWs.readyState !== 1) return;
-            const f32 = ev.inputBuffer.getChannelData(0);
-            const pcm = floatToPcm16(downsampleTo16k(f32, inRate));
+            const pcm = floatToPcm16(downsampleTo16k(ev.inputBuffer.getChannelData(0), inRate));
             liveWs.send(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength));
           };
           src.connect(proc);
@@ -599,7 +521,7 @@
           proc.connect(silent);
           silent.connect(liveCtx.destination);
         } catch (err) {
-          addMsg("agent", "دسترسی به میکروفون داده نشد. می‌توانید متن را تایپ کنید.", "سیستم");
+          addMsg("agent", "دسترسی به میکروفون داده نشد. متن را تایپ کنید.", "سیستم");
           await stopLive();
         }
       };
@@ -614,20 +536,21 @@
           textEl.value = msg.text || "";
         }
         if (msg.event === "assistant") {
-          applyAssistant({ reply: msg.text, phase: msg.phase, transfer: msg.transfer });
+          addMsg("agent", msg.text, "منشی · " + (msg.phase || ""));
+          if (msg.appointment_id) loadAppts();
+          loadCalendar();
         }
         if (msg.event === "status" && msg.message) addMsg("agent", msg.message, "سیستم");
       };
       ws.onclose = () => { if (liveWs === ws) stopLive(); };
-      ws.onerror = () => addMsg("agent", "ارتباط تماس صوتی قطع شد.", "سیستم");
     });
+
+    document.getElementById("refresh").addEventListener("click", loadAppts);
 
     (async () => {
       await health();
-      await loadServices();
-      await loadDoctors();
+      await loadCalendar();
       await loadAppts();
-      await loadRequests();
       await send("");
     })();
   </script>

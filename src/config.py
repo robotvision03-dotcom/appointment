@@ -70,6 +70,10 @@ class Config:
     log_level: str
     log_dir: Path
 
+    office_address: str
+    office_hours_start: str
+    office_hours_end: str
+
     # Audio / VAD
     twilio_sample_rate: int = 8000
     stt_sample_rate: int = 16000
@@ -118,6 +122,9 @@ def load_config() -> Config:
         port=int(_env("PORT", "38471")),
         log_level=_env("LOG_LEVEL", "INFO"),
         log_dir=_resolve_path(_env("LOG_DIR", "./logs")),
+        office_address=_env("OFFICE_ADDRESS", "خیابان ایثار، کوچه خواجه پلاک ۲"),
+        office_hours_start=_env("OFFICE_HOURS_START", "09:00"),
+        office_hours_end=_env("OFFICE_HOURS_END", "17:00"),
     )
 
 

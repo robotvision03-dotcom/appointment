@@ -1,61 +1,19 @@
-"""SQLite models and CRUD for doctors and appointments."""
+"""SQLite: car catalog and 30-minute inspection appointments."""
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime, timedelta, time as dtime
 from pathlib import Path
 from typing import Any, Iterator
 
+from src.cars import CATALOG, match_car
 from src.config import config
-from src.service_match import best_service, snap_heard_text as _snap_heard
+from src.jalali import format_jalali, jalali_month_matrix, to_jalali
 from src.utils import log, normalize_persian
 
-DEFAULT_SLOTS = [
-    "09:00",
-    "09:30",
-    "10:00",
-    "10:30",
-    "11:00",
-    "11:30",
-    "14:00",
-    "14:30",
-    "15:00",
-    "15:30",
-    "16:00",
-    "16:30",
-    "17:00",
-]
-
-SEED_DOCTORS = [
-    {
-        "name": "دکتر احمدی",
-        "specialty": "قلب و عروق",
-        "available_days": ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه"],
-    },
-    {
-        "name": "دکتر رضایی",
-        "specialty": "پوست",
-        "available_days": ["شنبه", "دوشنبه", "چهارشنبه"],
-    },
-    {
-        "name": "دکتر کریمی",
-        "specialty": "داخلی",
-        "available_days": ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه"],
-    },
-    {
-        "name": "دکتر نوری",
-        "specialty": "اطفال",
-        "available_days": ["یکشنبه", "سه‌شنبه", "پنجشنبه"],
-    },
-    {
-        "name": "دکتر موسوی",
-        "specialty": "زنان و زایمان",
-        "available_days": ["شنبه", "دوشنبه", "چهارشنبه"],
-    },
-]
+FRIDAY = 4  # datetime.weekday()
 
 
 @contextmanager
@@ -75,483 +33,233 @@ def get_conn(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 def init_db(db_path: Path | None = None) -> None:
-    """Create tables and seed sample doctors if the table is empty."""
     with get_conn(db_path) as conn:
         conn.executescript(
             """
-            CREATE TABLE IF NOT EXISTS doctors (
+            CREATE TABLE IF NOT EXISTS cars (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                specialty TEXT NOT NULL,
-                available_days TEXT NOT NULL
+                make TEXT NOT NULL,
+                model TEXT NOT NULL,
+                keywords TEXT NOT NULL DEFAULT '',
+                UNIQUE(make, model)
             );
 
-            CREATE TABLE IF NOT EXISTS appointments (
+            CREATE TABLE IF NOT EXISTS inspections (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                patient_name TEXT NOT NULL,
-                doctor_id INTEGER NOT NULL,
+                seller_name TEXT NOT NULL,
+                phone TEXT,
+                make TEXT NOT NULL,
+                model TEXT NOT NULL,
+                year TEXT,
+                km INTEGER,
                 date TEXT NOT NULL,
                 time TEXT NOT NULL,
-                phone_number TEXT,
                 created_at TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'booked',
-                FOREIGN KEY (doctor_id) REFERENCES doctors(id)
+                status TEXT NOT NULL DEFAULT 'booked'
             );
 
-            CREATE INDEX IF NOT EXISTS idx_appt_doctor_date
-                ON appointments(doctor_id, date, time);
-
-            CREATE TABLE IF NOT EXISTS services (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                keywords TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS providers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                service_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                area TEXT,
-                FOREIGN KEY (service_id) REFERENCES services(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS service_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                customer_name TEXT,
-                customer_phone TEXT NOT NULL,
-                provider_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                call_status TEXT,
-                sms_status TEXT,
-                FOREIGN KEY (provider_id) REFERENCES providers(id)
-            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_insp_slot
+                ON inspections(date, time) WHERE status = 'booked';
             """
         )
-        count = conn.execute("SELECT COUNT(*) AS c FROM doctors").fetchone()["c"]
+        count = conn.execute("SELECT COUNT(*) AS c FROM cars").fetchone()["c"]
         if count == 0:
-            for doc in SEED_DOCTORS:
-                conn.execute(
-                    "INSERT INTO doctors (name, specialty, available_days) VALUES (?, ?, ?)",
-                    (doc["name"], doc["specialty"], json.dumps(doc["available_days"], ensure_ascii=False)),
-                )
-            log.info("Seeded %d doctors", len(SEED_DOCTORS))
-        _ensure_service_catalog(conn)
+            conn.executemany(
+                "INSERT INTO cars (make, model, keywords) VALUES (?, ?, ?)",
+                CATALOG,
+            )
+            log.info("Seeded %d car models", len(CATALOG))
 
 
-def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
-    if row is None:
-        return None
-    data = dict(row)
-    if "available_days" in data and isinstance(data["available_days"], str):
-        try:
-            data["available_days"] = json.loads(data["available_days"])
-        except json.JSONDecodeError:
-            data["available_days"] = []
-    return data
-
-
-def list_doctors(db_path: Path | None = None) -> list[dict[str, Any]]:
+def list_cars(db_path: Path | None = None) -> list[dict[str, Any]]:
     with get_conn(db_path) as conn:
         rows = conn.execute(
-            "SELECT id, name, specialty, available_days FROM doctors ORDER BY id"
+            "SELECT id, make, model, keywords FROM cars ORDER BY make, model"
         ).fetchall()
-    return [_row_to_dict(r) for r in rows]  # type: ignore[misc]
+    return [dict(r) for r in rows]
 
 
-def get_doctor(doctor_id: int, db_path: Path | None = None) -> dict[str, Any] | None:
+def list_makes(db_path: Path | None = None) -> list[str]:
     with get_conn(db_path) as conn:
-        row = conn.execute(
-            "SELECT id, name, specialty, available_days FROM doctors WHERE id = ?",
-            (doctor_id,),
-        ).fetchone()
-    return _row_to_dict(row)
+        rows = conn.execute(
+            "SELECT DISTINCT make FROM cars ORDER BY make"
+        ).fetchall()
+    return [r["make"] for r in rows]
 
 
-def find_doctor_by_name(
-    name: str,
-    db_path: Path | None = None,
-    *,
-    strict: bool = False,
-) -> dict[str, Any] | None:
-    """Match a spoken doctor. strict=True avoids treating a patient name like علی رضایی as دکتر رضایی."""
-    if not name:
-        return None
-    raw = name.replace("ي", "ی")
-    titled = "دکتر" in raw or "doct" in raw.lower()
-    tokens = [t for t in raw.replace("دکتر", " ").split() if len(t) >= 2]
-    doctors = list_doctors(db_path)
-
-    for doc in doctors:
-        spec = (doc.get("specialty") or "").strip()
-        if spec and len(spec) >= 3 and spec in raw:
-            return doc
-
-    for doc in doctors:
-        last = doc["name"].replace("دکتر", "").strip()
-        if not last:
-            continue
-        if last not in tokens and last not in raw:
-            continue
-        if titled or raw.strip() in {last, doc["name"], f"دکتر {last}"}:
-            return doc
-        if not strict and last in tokens and len(tokens) <= 4:
-            return doc
-    return None
+def slot_times() -> list[str]:
+    start = _parse_hhmm(config.office_hours_start)
+    end = _parse_hhmm(config.office_hours_end)
+    out: list[str] = []
+    cur = datetime.combine(date.today(), start)
+    limit = datetime.combine(date.today(), end)
+    while cur < limit:
+        out.append(cur.strftime("%H:%M"))
+        cur += timedelta(minutes=30)
+    return out
 
 
-def get_available_slots(doctor_id: int, date: str, db_path: Path | None = None) -> list[str]:
-    """Return free times for a doctor on a date. Occupied booked slots are excluded."""
+def _parse_hhmm(value: str) -> dtime:
+    h, m = (value or "09:00").split(":")[:2]
+    return dtime(int(h), int(m))
+
+
+def is_office_open(day: date) -> bool:
+    return day.weekday() != FRIDAY
+
+
+def taken_times(day: str, db_path: Path | None = None) -> set[str]:
     with get_conn(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT time FROM appointments
-            WHERE doctor_id = ? AND date = ? AND status = 'booked'
+            SELECT time FROM inspections
+            WHERE date = ? AND status = 'booked'
             """,
-            (doctor_id, date),
+            (day,),
         ).fetchall()
-    taken = {r["time"] for r in rows}
-    return [s for s in DEFAULT_SLOTS if s not in taken]
+    return {r["time"] for r in rows}
 
 
-def is_slot_free(doctor_id: int, date: str, time: str, db_path: Path | None = None) -> bool:
-    with get_conn(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT id FROM appointments
-            WHERE doctor_id = ? AND date = ? AND time = ? AND status = 'booked'
-            """,
-            (doctor_id, date, time),
-        ).fetchone()
-    return row is None
+def available_slots(day: str, db_path: Path | None = None) -> list[str]:
+    d = date.fromisoformat(day)
+    if not is_office_open(d):
+        return []
+    taken = taken_times(day, db_path)
+    now = datetime.now()
+    slots = []
+    for hhmm in slot_times():
+        if hhmm in taken:
+            continue
+        if d == now.date():
+            h, m = map(int, hhmm.split(":"))
+            if datetime.combine(d, dtime(h, m)) <= now:
+                continue
+        slots.append(hhmm)
+    return slots
 
 
-def book_appointment(
-    patient_name: str,
+def is_slot_free(day: str, time: str, db_path: Path | None = None) -> bool:
+    return time in available_slots(day, db_path)
+
+
+def next_open_slots(limit: int = 6, db_path: Path | None = None) -> list[dict[str, str]]:
+    found: list[dict[str, str]] = []
+    start = date.today()
+    for i in range(60):
+        day = start + timedelta(days=i)
+        iso = day.isoformat()
+        for hhmm in available_slots(iso, db_path):
+            found.append(
+                {
+                    "date": iso,
+                    "time": hhmm,
+                    "label": f"{format_jalali(day)} ساعت {hhmm}",
+                }
+            )
+            if len(found) >= limit:
+                return found
+    return found
+
+
+def month_calendar(jy: int, jm: int, db_path: Path | None = None) -> dict[str, Any]:
+    weeks = []
+    for week in jalali_month_matrix(jy, jm):
+        row = []
+        for d in week:
+            if d is None:
+                row.append(None)
+                continue
+            iso = d.isoformat()
+            free = available_slots(iso, db_path)
+            row.append(
+                {
+                    "date": iso,
+                    "jalali_day": to_jalali(d)[2],
+                    "open": is_office_open(d) and d >= date.today(),
+                    "free_count": len(free) if d >= date.today() else 0,
+                    "weekday": d.weekday(),
+                    "today": d == date.today(),
+                }
+            )
+        weeks.append(row)
+    return {
+        "year": jy,
+        "month": jm,
+        "weeks": weeks,
+        "address": config.office_address,
+        "slot_minutes": 30,
+    }
+
+
+def book_inspection(
+    seller_name: str,
     phone: str,
-    doctor_id: int,
-    date: str,
+    make: str,
+    model: str,
+    year: str,
+    km: int | None,
+    day: str,
     time: str,
     db_path: Path | None = None,
 ) -> int:
-    """Insert a booked appointment and return its id. Raises ValueError if the slot is taken."""
-    if not is_slot_free(doctor_id, date, time, db_path):
-        raise ValueError("این ساعت قبلاً رزرو شده است.")
+    if not is_slot_free(day, time, db_path):
+        raise ValueError("این ساعت قبلاً رزرو شده است. وقت خالی دیگری انتخاب کنید.")
     created = datetime.now().isoformat(timespec="seconds")
-    with get_conn(db_path) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO appointments
-                (patient_name, doctor_id, date, time, phone_number, created_at, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'booked')
-            """,
-            (patient_name, doctor_id, date, time, phone, created),
-        )
-        appt_id = int(cur.lastrowid)
-    log.info(
-        "Booked appointment id=%s patient=%s doctor_id=%s %s %s",
-        appt_id,
-        patient_name,
-        doctor_id,
-        date,
-        time,
-    )
+    try:
+        with get_conn(db_path) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO inspections
+                    (seller_name, phone, make, model, year, km, date, time, created_at, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked')
+                """,
+                (seller_name, phone or "", make, model, year or "", km, day, time, created),
+            )
+            appt_id = int(cur.lastrowid)
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("این ساعت قبلاً رزرو شده است. وقت خالی دیگری انتخاب کنید.") from exc
+    log.info("Booked inspection id=%s %s %s %s %s", appt_id, seller_name, make, day, time)
     return appt_id
 
 
-def cancel_appointment(appointment_id: int, db_path: Path | None = None) -> bool:
+def get_inspection(appointment_id: int, db_path: Path | None = None) -> dict[str, Any] | None:
     with get_conn(db_path) as conn:
-        cur = conn.execute(
-            "UPDATE appointments SET status = 'cancelled' WHERE id = ? AND status = 'booked'",
-            (appointment_id,),
-        )
-        return cur.rowcount > 0
+        row = conn.execute(
+            "SELECT * FROM inspections WHERE id = ?", (appointment_id,)
+        ).fetchone()
+    return dict(row) if row else None
 
 
-def list_appointments(db_path: Path | None = None, limit: int = 100) -> list[dict[str, Any]]:
+def list_inspections(db_path: Path | None = None, limit: int = 80) -> list[dict[str, Any]]:
     with get_conn(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT a.id, a.patient_name, a.doctor_id, d.name AS doctor_name,
-                   d.specialty, a.date, a.time, a.phone_number, a.created_at, a.status
-            FROM appointments a
-            JOIN doctors d ON d.id = a.doctor_id
-            ORDER BY a.id DESC
+            SELECT * FROM inspections
+            ORDER BY date DESC, time DESC
             LIMIT ?
             """,
             (limit,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        item = dict(r)
+        try:
+            item["jalali"] = format_jalali(date.fromisoformat(item["date"]))
+        except ValueError:
+            item["jalali"] = item["date"]
+        out.append(item)
+    return out
 
 
-def get_appointment(appointment_id: int, db_path: Path | None = None) -> dict[str, Any] | None:
-    with get_conn(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT a.id, a.patient_name, a.doctor_id, d.name AS doctor_name,
-                   d.specialty, a.date, a.time, a.phone_number, a.created_at, a.status
-            FROM appointments a
-            JOIN doctors d ON d.id = a.doctor_id
-            WHERE a.id = ?
-            """,
-            (appointment_id,),
-        ).fetchone()
-    return dict(row) if row else None
-
-
-SEED_SERVICES = [
-    {
-        "name": "آرایشگر",
-        "keywords": "آرایش آرایشگر آرایشگاه آرایشگا پیرایش سلمانی مو کوتاهی سالن زیبایی",
-        "providers": [
-            ("سالن گلبرگ", "09121001001", "ونک"),
-            ("پیرایش نو", "09121001002", "انقلاب"),
-            ("آرایشگاه نیلوفر", "09121001003", "سعادت‌آباد"),
-            ("سالن مردانه کاسپین", "09121001004", "تجریش"),
-            ("آکادمی زیبایی رز", "09121001005", "شهرک غرب"),
-        ],
-    },
-    {
-        "name": "مکانیک",
-        "keywords": "مکانیک میکانی میکنی مکنیک ماشین خودرو تعمیر باتری پنچری تعمیرگاه امداد",
-        "providers": [
-            ("تعمیرگاه آزادی", "09121111001", "آزادی"),
-            ("امداد خودرو پارس", "09121111002", "تهرانپارس"),
-            ("اتوسرویس شریف", "09121111003", "صادقیه"),
-            ("تعمیرگاه بهمن", "09121111004", "جاده ساوه"),
-            ("باتری و پنچری نصر", "09121111005", "نواب"),
-        ],
-    },
-    {
-        "name": "اورژانس",
-        "keywords": "اورژانس آمبولانس تصادف اورژانسی ۱۱۵ 115",
-        "providers": [
-            ("اورژانس ۱۱۵", "115", "سراسر شهر"),
-            ("درمانگاه شبانه‌روزی نور", "09121222001", "شریعتی"),
-            ("اورژانس خصوصی سپهر", "09121222002", "ولیعصر"),
-            ("درمانگاه شبانه‌روزی سپید", "09121222003", "پیروزی"),
-            ("آمبولانس مهر", "09121222004", "رسالت"),
-        ],
-    },
-    {
-        "name": "پزشک",
-        "keywords": "پزشک دکتر مطب ویزیت بیمارستان نوبت درمانگاه",
-        "providers": [
-            ("دکتر کریمی داخلی", "09121333001", "مطهری"),
-            ("دکتر نوری اطفال", "09121333002", "نیاوران"),
-            ("دکتر احمدی قلب", "09121333003", "جردن"),
-            ("دکتر موسوی زنان", "09121333004", "زعفرانیه"),
-            ("دکتر رضایی پوست", "09121333005", "سعادت‌آباد"),
-        ],
-    },
-    {
-        "name": "لوله‌کش",
-        "keywords": "لوله لوله‌کش لوله‌کشی چکه فاضلاب سیفون تأسیسات",
-        "providers": [
-            ("تأسیسات رضایی", "09121444001", "پونک"),
-            ("لوله‌کشی آریا", "09121444002", "تهرانپارس"),
-            ("خدمات فاضلاب شهر", "09121444003", "افسریه"),
-            ("تأسیسات شبانه پاسارگاد", "09121444004", "ستارخان"),
-            ("رفع گرفتگی پایپ‌فیکس", "09121444005", "شهرری"),
-        ],
-    },
-    {
-        "name": "برقکار",
-        "keywords": "برق برقکار سیم‌کشی فیوز روشنایی ساختمان",
-        "providers": [
-            ("برق ساختمان کاظمی", "09121555001", "سعادت‌آباد"),
-            ("برق صنعتی نوران", "09121555002", "جاده مخصوص"),
-            ("سیم‌کشی خانه سبز", "09121555003", "پونک"),
-            ("رفع اتصالی فوری", "09121555004", "آزادی"),
-            ("روشنایی و تابلو برق هما", "09121555005", "شهرک اکباتان"),
-        ],
-    },
-]
-
-
-def _ensure_service_catalog(conn: sqlite3.Connection) -> None:
-    """Insert sample services/providers; add missing phones if the DB was seeded earlier."""
-    added = 0
-    for svc in SEED_SERVICES:
-        row = conn.execute("SELECT id FROM services WHERE name = ?", (svc["name"],)).fetchone()
-        if row is None:
-            cur = conn.execute(
-                "INSERT INTO services (name, keywords) VALUES (?, ?)",
-                (svc["name"], svc["keywords"]),
-            )
-            sid = int(cur.lastrowid)
-        else:
-            sid = int(row["id"])
-            conn.execute(
-                "UPDATE services SET keywords = ? WHERE id = ?",
-                (svc["keywords"], sid),
-            )
-        have = {
-            r["phone"]
-            for r in conn.execute(
-                "SELECT phone FROM providers WHERE service_id = ?", (sid,)
-            ).fetchall()
-        }
-        have_names = {
-            r["name"]
-            for r in conn.execute(
-                "SELECT name FROM providers WHERE service_id = ?", (sid,)
-            ).fetchall()
-        }
-        for name, phone, area in svc["providers"]:
-            if name in have_names:
-                conn.execute(
-                    "UPDATE providers SET phone = ?, area = ? WHERE service_id = ? AND name = ?",
-                    (phone, area, sid, name),
-                )
-                have.add(phone)
-                continue
-            if phone in have:
-                continue
-            conn.execute(
-                "INSERT INTO providers (service_id, name, phone, area) VALUES (?, ?, ?, ?)",
-                (sid, name, phone, area),
-            )
-            have.add(phone)
-            have_names.add(name)
-            added += 1
-    if added:
-        log.info("Service catalog updated (%d new providers)", added)
-
-
-def list_services(db_path: Path | None = None) -> list[dict[str, Any]]:
-    with get_conn(db_path) as conn:
-        rows = conn.execute("SELECT id, name, keywords FROM services ORDER BY id").fetchall()
-    return [dict(r) for r in rows]
-
-
-def leftover_after_service(text: str, svc: dict[str, Any]) -> str:
-    """Strip the service name/keywords so «آرایشگاه» is not treated as a shop named آرایشگاه."""
-    t = (text or "").replace("ي", "ی")
-    words = [svc.get("name") or ""] + (svc.get("keywords") or "").split()
-    words.sort(key=len, reverse=True)
-    for w in words:
-        if len(w) >= 2:
-            t = t.replace(w, " ")
-    return " ".join(t.split())
-
-
-def find_service(text: str, db_path: Path | None = None) -> dict[str, Any] | None:
-    t = normalize_persian(text).replace("ي", "ی")
-    services = list_services(db_path)
-    for svc in services:
-        if svc["name"] and svc["name"] in t:
-            return svc
-        for kw in (svc.get("keywords") or "").split():
-            if kw and kw in t:
-                return svc
-    svc, _score = best_service(t, services)
-    return svc
+def find_car(text: str) -> dict | None:
+    return match_car(normalize_persian(text))
 
 
 def snap_heard_text(text: str, db_path: Path | None = None) -> str:
-    return _snap_heard(text, list_services(db_path))
-
-
-def list_providers(service_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
-    with get_conn(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT p.id, p.service_id, p.name, p.phone, p.area, s.name AS service_name
-            FROM providers p JOIN services s ON s.id = p.service_id
-            WHERE p.service_id = ? ORDER BY p.id
-            """,
-            (service_id,),
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def get_provider(provider_id: int, db_path: Path | None = None) -> dict[str, Any] | None:
-    with get_conn(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT p.id, p.service_id, p.name, p.phone, p.area, s.name AS service_name
-            FROM providers p JOIN services s ON s.id = p.service_id
-            WHERE p.id = ?
-            """,
-            (provider_id,),
-        ).fetchone()
-    return dict(row) if row else None
-
-
-_ORDINALS = {
-    "اول": 1,
-    "یکم": 1,
-    "اولی": 1,
-    "دوم": 2,
-    "دومی": 2,
-    "سوم": 3,
-    "سومی": 3,
-    "چهارم": 4,
-    "پنجم": 5,
-    "ششم": 6,
-}
-
-
-def find_provider(text: str, service_id: int, db_path: Path | None = None) -> dict[str, Any] | None:
-    import re
-
-    t = (text or "").replace("ي", "ی")
-    providers = list_providers(service_id, db_path)
-    numbered = None
-    for word, idx in _ORDINALS.items():
-        if word in t and 1 <= idx <= len(providers):
-            numbered = providers[idx - 1]
-            break
-    m = re.search(r"(\d+)", t)
-    if numbered is None and m:
-        idx = int(m.group(1))
-        if 1 <= idx <= len(providers):
-            numbered = providers[idx - 1]
-    for p in providers:
-        if p["name"] in t:
-            return p
-        bits = [part for part in p["name"].split() if len(part) > 2 and part not in {"دکتر"}]
-        if bits and all(part in t for part in bits):
-            return p
-        if any(part in t for part in bits if len(part) >= 4):
-            return p
-    return numbered
-
-
-def save_service_request(
-    customer_name: str,
-    customer_phone: str,
-    provider_id: int,
-    call_status: str,
-    sms_status: str,
-    db_path: Path | None = None,
-) -> int:
-    created = datetime.now().isoformat(timespec="seconds")
-    with get_conn(db_path) as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO service_requests
-                (customer_name, customer_phone, provider_id, created_at, call_status, sms_status)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (customer_name, customer_phone, provider_id, created, call_status, sms_status),
-        )
-        return int(cur.lastrowid)
-
-
-def list_service_requests(db_path: Path | None = None, limit: int = 50) -> list[dict[str, Any]]:
-    with get_conn(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT r.id, r.customer_name, r.customer_phone, r.created_at,
-                   r.call_status, r.sms_status, p.name AS provider_name, p.phone AS provider_phone,
-                   s.name AS service_name
-            FROM service_requests r
-            JOIN providers p ON p.id = r.provider_id
-            JOIN services s ON s.id = p.service_id
-            ORDER BY r.id DESC LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-    return [dict(r) for r in rows]
+    """Map a noisy transcript onto a catalog car when confident."""
+    hit = find_car(text)
+    if not hit:
+        return normalize_persian(text)
+    if hit.get("model"):
+        return f"{hit['make']} {hit['model']}"
+    return hit["make"]
