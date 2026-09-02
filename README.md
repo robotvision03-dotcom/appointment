@@ -47,14 +47,23 @@ python -m src
 
 ChatGPT هنگام مکالمه دو کار جدا می‌کند؛ هیچ مدل ASR به‌تنهایی «مثل چت‌جی‌پی‌تی می‌فهمد»:
 
-1. **شنیدن (ASR)** — موج صدا → حروف. اینجا **Shenava-Koochik CTC** (~114M FastConformer، حدود ۸٪ WER روی بنچمارک سازنده) مدل مناسب دفتر است: فارسی، سبک، CPU، بدون توهم انگلیسی Whisper.
-2. **فهمیدن (NLU)** — متن → خودرو / سال / کیلومتر. این لایهٔ ChatGPT است. در این پروژه همان کار را **واژه‌نامهٔ خودرو + اصلاح آوایی + در صورت نیاز Ollama** انجام می‌دهد، محدود به فهرست ایران.
-
-اگر Shenava عوض شود، جایگزین دقت بالاتر روی بنچمارک عمومی فارسی معمولاً **Gooya v1.4** است (بزرگ‌تر، اغلب GPU). Whisper large-v3 برای نویز مخلوط بهتر است ولی روی فارسیِ بازار خودرو ضعیف‌تر از Shenava/Gooya است و توهم می‌سازد. مدل `vhdm/whisper-large-fa-v1` را جایگزین نکنید.
-
-سفارشی‌سازی نام خودرو **با فاین‌تیون ساعت‌ها صدا شروع نمی‌شود**؛ اول واژه‌نامه و جفت‌حروف ژ/ج، ق/غ، ث/س و نام‌های رایج بازار (پجو، پرس، سمن، ال‌نود) است. فاین‌تیون فقط وقتی دفتر چند ده ساعت صدای واقعی با برچسب پژو/سمند/پراید داشته باشد ارزش دارد.
+1. **شنیدن (ASR)** — موج صدا → حروف. **Gooya v1.4** is preferred when `GOOYA_API_URL` and `GOOYA_API_TOKEN` are set (commercial API; no public Hugging Face weights). Otherwise **Shenava-Koochik CTC** runs on this machine.
+2. **فهمیدن (NLU)** — متن → خودرو / سال / کیلومتر. واژه‌نامهٔ خودرو + اصلاح آوایی + در صورت نیاز Ollama.
 
 ## شنیدن گفتار
+
+Gooya v1.4 cannot be downloaded. After you receive a vendor URL and bearer token:
+
+```bash
+# .env
+STT_ENGINE=auto
+GOOYA_API_URL=https://YOUR_HOST/transcribe
+GOOYA_API_TOKEN=...
+python -m src download-gooya
+python -m src
+```
+
+On-device fallback (already installed):
 
 ```powershell
 py -m src download-shenava

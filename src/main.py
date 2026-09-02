@@ -62,6 +62,11 @@ def health() -> dict:
             "engine": stt.engine,
             "head": getattr(stt, "head", ""),
             "error": stt.last_error,
+            "gooya": {
+                "configured": bool(config.gooya_api_url and config.gooya_api_token),
+                "engine": "gooya-v1.4",
+            },
+            "mode": getattr(stt, "mode", config.stt_engine),
         },
         "tts": {"available": False},
         "llm": {"available": llm.is_available(), "model": llm.model},

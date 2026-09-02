@@ -56,6 +56,10 @@ class Config:
     shenava_ctc_path: Path
     shenava_head: str
     shenava_threads: int
+    gooya_api_url: str
+    gooya_api_token: str
+    gooya_timeout_s: float
+    stt_engine: str
     piper_model_path: Path
     piper_config_path: Path
 
@@ -108,6 +112,10 @@ def load_config() -> Config:
         ),
         shenava_head=_env("SHENAVA_HEAD", "ctc").lower() or "ctc",
         shenava_threads=int(_env("SHENAVA_THREADS", "4") or "4"),
+        gooya_api_url=_env("GOOYA_API_URL"),
+        gooya_api_token=_env("GOOYA_API_TOKEN"),
+        gooya_timeout_s=float(_env("GOOYA_TIMEOUT_S", "25") or "25"),
+        stt_engine=(_env("STT_ENGINE", "auto") or "auto").lower(),
         piper_model_path=_resolve_path(
             _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx")
         ),

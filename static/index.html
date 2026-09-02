@@ -304,8 +304,11 @@
         document.getElementById("addr").textContent =
           h.office.address + " — نوبت‌های نیم‌ساعته، جمعه تعطیل";
       }
+      const engine = (h.stt && h.stt.engine) ? h.stt.engine : "stt";
+      const gooya = h.stt && h.stt.gooya && h.stt.gooya.configured;
       const pills = [
-        ["شنوا", h.stt && h.stt.available],
+        ["شنوا " + engine, h.stt && h.stt.available],
+        ["گویا v1.4", !!gooya],
         ["خودرو در فهرست", true],
         ["پیامک", h.sms && h.sms.available],
       ];

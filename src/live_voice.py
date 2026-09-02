@@ -86,7 +86,11 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                             "tts": False,
                             "message": None
                             if stt.available
-                            else "مدل شنوا نصب نیست. python -m src download-shenava را اجرا کنید، یا متن را تایپ کنید.",
+                            else (
+                                "گویا v1.4 بدون کلید است و شنوا نصب نیست. "
+                                "GOOYA_API_URL و GOOYA_API_TOKEN را در .env بگذارید "
+                                "یا python -m src download-shenava را اجرا کنید."
+                            ),
                         }
                     )
                 elif event == "stop":

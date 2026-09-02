@@ -205,4 +205,84 @@ def _pcm16_to_float32(audio_data: bytes, sample_rate: int) -> np.ndarray:
     return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-stt = ShenavaSTT()
+class HearingSTT:
+    """Prefer Gooya v1.4 when licensed; otherwise Shenava CTC on this machine."""
+
+    def __init__(self) -> None:
+        from src.gooya import GooyaSTT
+
+        self.gooya = GooyaSTT()
+        self.shenava = ShenavaSTT()
+        self._last_engine = ""
+        self.last_error: str | None = None
+        prefer = config.stt_engine
+        if prefer not in {"auto", "gooya", "shenava"}:
+            prefer = "auto"
+        self.mode = prefer
+        if self.mode in {"auto", "gooya"} and not self.gooya.configured:
+            log.warning(
+                "Gooya v1.4 is closed-source (no Hugging Face weights). "
+                "Using Shenava until GOOYA_API_URL + GOOYA_API_TOKEN are set."
+            )
+
+    @property
+    def engine(self) -> str:
+        if self._last_engine:
+            return self._last_engine
+        if self.mode in {"auto", "gooya"} and self.gooya.configured:
+            return self.gooya.engine
+        return self.shenava.engine
+
+    @property
+    def head(self) -> str:
+        if self.engine.startswith("gooya"):
+            return "http-api"
+        return getattr(self.shenava, "head", "") or ""
+
+    @property
+    def loaded(self) -> bool:
+        return self.gooya.configured or self.shenava.loaded
+
+    @property
+    def available(self) -> bool:
+        if self.mode == "gooya":
+            return self.gooya.available or self.shenava.available
+        return self.gooya.available or self.shenava.available
+
+    def ensure_loaded(self) -> bool:
+        ok = False
+        if self.mode in {"auto", "gooya"} and self.gooya.configured:
+            ok = self.gooya.ensure_loaded() or ok
+        if self.mode in {"auto", "shenava"} or not ok:
+            ok = self.shenava.ensure_loaded() or ok
+        self.last_error = self.gooya.last_error if self.engine.startswith("gooya") else self.shenava.last_error
+        return ok
+
+    def transcribe(self, audio_data: bytes, sample_rate: int = 16000) -> str:
+        if not audio_data:
+            return ""
+        use_gooya = self.mode in {"auto", "gooya"} and self.gooya.configured
+        if use_gooya:
+            text = self.gooya.transcribe(audio_data, sample_rate)
+            if text:
+                self._last_engine = self.gooya.engine
+                self.last_error = None
+                return text
+            if self.mode == "gooya":
+                self._last_engine = self.gooya.engine
+                self.last_error = self.gooya.last_error
+                # Still try Shenava so a down API does not mute the office.
+                log.warning("Gooya returned empty; falling back to Shenava")
+        self._last_engine = self.shenava.engine
+        text = self.shenava.transcribe(audio_data, sample_rate)
+        self.last_error = self.shenava.last_error if not text else None
+        return text
+
+    def transcribe_partial(self, recognizer, audio_chunk: bytes) -> tuple[str | None, str]:
+        return None, ""
+
+    def make_recognizer(self, sample_rate: int = 16000):
+        return None
+
+
+stt = HearingSTT()
