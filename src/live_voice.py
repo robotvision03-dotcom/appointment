@@ -68,6 +68,7 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                         sample_rate,
                         stt.available,
                     )
+                    greeting = call_manager.greeting()
                     await _send_assistant(websocket, greeting, "ask_service", "continue")
                     await websocket.send_json(
                         {
