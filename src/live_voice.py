@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -13,7 +12,6 @@ from src.config import config
 from src.handoff import start_warm_transfer
 from src.sms import send_booking_sms
 from src.stt import stt
-from src.tts import tts
 from src.utils import log, pcm16_rms
 
 FRAME_MS_ESTIMATE = 30  # ~480 samples at 16 kHz
@@ -64,10 +62,10 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                         {
                             "event": "status",
                             "stt": stt.available,
-                            "tts": tts.available,
+                            "tts": False,
                             "message": None
                             if stt.available
-                            else "مدل Whisper نصب نیست. python -m src.download_whisper را اجرا کنید، یا متن را تایپ کنید.",
+                            else "مدل شنوا نصب نیست. python -m src download-shenava را اجرا کنید، یا متن را تایپ کنید.",
                         }
                     )
                 elif event == "stop":
@@ -160,10 +158,3 @@ async def _send_assistant(
     if extra:
         payload.update({k: v for k, v in extra.items() if v is not None})
     await websocket.send_json(payload)
-    if not text:
-        return
-    wav = await asyncio.to_thread(tts.synthesize_wav, text)
-    if wav:
-        await websocket.send_json(
-            {"event": "audio", "wav_b64": base64.b64encode(wav).decode("ascii")}
-        )

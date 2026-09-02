@@ -13,7 +13,6 @@ from src.call_manager import call_manager
 from src.config import ROOT_DIR, config
 from src.llm import llm
 from src.stt import stt
-from src.tts import tts
 from src.handoff import start_warm_transfer
 from src.live_voice import handle_browser_voice
 from src.sip_bridge import sip_turn
@@ -42,11 +41,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 def _startup() -> None:
     db.init_db()
     log.info(
-        "Agent ready host=%s port=%s stt=%s tts=%s ollama=%s kavenegar=%s",
+        "Agent ready host=%s port=%s stt=%s ollama=%s kavenegar=%s",
         config.host,
         config.port,
         stt.available,
-        tts.available,
         llm.is_available(),
         config.kavenegar_configured,
     )
@@ -67,9 +65,10 @@ def health() -> dict:
             "model": stt.model_id,
             "path": str(stt.model_path),
             "loaded": stt.loaded,
+            "head": getattr(stt, "head", ""),
             "error": stt.last_error,
         },
-        "tts": {"available": tts.available, "path": str(config.piper_model_path)},
+        "tts": {"available": False, "enabled": False},
         "llm": {
             "available": llm.is_available(),
             "url": llm.url,
@@ -78,7 +77,7 @@ def health() -> dict:
             "installed": llm.list_models() if llm.is_available() else [],
         },
         "sms": {"provider": "kavenegar", "available": config.kavenegar_configured},
-        "voice": {"browser": True, "stt": stt.available, "tts": tts.available},
+        "voice": {"browser": True, "stt": stt.available, "tts": False},
         "receptionist_number": config.receptionist_number,
         "doctors": len(db.list_doctors()),
         "services": len(db.list_services()),
@@ -263,8 +262,7 @@ async def sip_turn_endpoint(request: Request) -> JSONResponse:
 
 @app.get("/api/tts")
 def api_tts(text: str) -> Response:
-    wav = tts.synthesize_wav(text)
-    return Response(content=wav, media_type="audio/wav")
+    return Response(content=b"", media_type="audio/wav", status_code=204)
 
 
 def create_app() -> FastAPI:

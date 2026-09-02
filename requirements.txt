@@ -3,10 +3,8 @@ uvicorn[standard]==0.34.2
 python-dotenv==1.1.0
 httpx==0.28.1
 twilio==9.5.2
-faster-whisper==1.1.1
-transformers>=4.45.0
-torch>=2.2.0
-piper-tts==1.7.0
+sherpa-onnx>=1.10.0
+huggingface_hub>=0.26.0
 numpy>=1.26.0
 pydantic==2.11.3
 websockets==15.0.1

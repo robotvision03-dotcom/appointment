@@ -1,4 +1,4 @@
-"""Persian speech-to-text via Whisper large Farsi v1 (vhdm), local CTranslate2."""
+"""Persian speech-to-text via Shenava-Koochik-v1.5 (sherpa-onnx)."""
 
 from __future__ import annotations
 
@@ -11,78 +11,89 @@ from src.config import config
 from src.utils import log
 
 
-def _looks_like_ct2(path: Path) -> bool:
-    return (path / "model.bin").is_file()
+def _ctc_ready(path: Path) -> bool:
+    return (path / "model.onnx").is_file() and (path / "tokens.txt").is_file()
 
 
-class WhisperSTT:
-    """Transcribe 16 kHz mono 16-bit PCM with vhdm/whisper-large-fa-v1."""
+def _rnnt_ready(path: Path) -> bool:
+    return all(
+        (path / name).is_file()
+        for name in ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt")
+    )
+
+
+class ShenavaSTT:
+    """16 kHz mono PCM → Persian text. CTC head of Koochik v1.5 (8.12% WER)."""
 
     def __init__(self) -> None:
-        self.model_id = config.whisper_model_id
-        self.model_path = config.whisper_model_path
-        self.engine = "whisper-large-fa-v1"
-        self._model = None
+        self.model_id = config.shenava_model_id
+        self.model_path = config.shenava_model_path
+        self.engine = "shenava-koochik-v1.5"
+        self._recognizer = None
         self._lock = threading.Lock()
         self.last_error: str | None = None
-        if _looks_like_ct2(self.model_path):
-            self.last_error = None
-        else:
+        self.head = ""
+        if not _ctc_ready(self.model_path) and not _rnnt_ready(self.model_path):
             self.last_error = (
-                f"Whisper CT2 model not found at {self.model_path}. "
-                "Run: python -m src.download_whisper"
+                f"Shenava not found at {self.model_path}. "
+                "Run: python -m src download-shenava"
             )
             log.warning("%s", self.last_error)
 
     @property
     def loaded(self) -> bool:
-        return self._model is not None
+        return self._recognizer is not None
 
     @property
     def available(self) -> bool:
-        return _looks_like_ct2(self.model_path) or self._model is not None
+        return _ctc_ready(self.model_path) or _rnnt_ready(self.model_path) or self._recognizer is not None
 
     def ensure_loaded(self) -> bool:
-        if self._model is not None:
+        if self._recognizer is not None:
             return True
         with self._lock:
-            if self._model is not None:
+            if self._recognizer is not None:
                 return True
-            if not _looks_like_ct2(self.model_path):
+            try:
+                import sherpa_onnx
+            except Exception as exc:  # noqa: BLE001
+                self.last_error = f"sherpa-onnx missing: {exc}"
+                log.error("%s", self.last_error)
                 return False
             try:
-                from faster_whisper import WhisperModel
-
-                device = config.whisper_device
-                compute = config.whisper_compute_type
-                if device == "auto":
-                    try:
-                        import ctranslate2
-
-                        device = "cuda" if ctranslate2.get_cuda_device_count() else "cpu"
-                    except Exception:  # noqa: BLE001
-                        device = "cpu"
-                if device == "cpu" and compute in {"float16", "float32"}:
-                    compute = "int8"
-                log.info(
-                    "Loading Whisper %s from %s device=%s compute=%s",
-                    self.model_id,
-                    self.model_path,
-                    device,
-                    compute,
-                )
-                self._model = WhisperModel(
-                    str(self.model_path),
-                    device=device,
-                    compute_type=compute,
-                )
+                threads = max(1, int(config.shenava_threads))
+                if _ctc_ready(self.model_path) and config.shenava_head != "rnnt":
+                    self._recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
+                        model=str(self.model_path / "model.onnx"),
+                        tokens=str(self.model_path / "tokens.txt"),
+                        num_threads=threads,
+                        sample_rate=16000,
+                        feature_dim=80,
+                        decoding_method="greedy_search",
+                    )
+                    self.head = "ctc"
+                    log.info("Shenava-Koochik-v1.5 CTC ready from %s", self.model_path)
+                elif _rnnt_ready(self.model_path):
+                    self._recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+                        encoder=str(self.model_path / "encoder.int8.onnx"),
+                        decoder=str(self.model_path / "decoder.int8.onnx"),
+                        joiner=str(self.model_path / "joiner.int8.onnx"),
+                        tokens=str(self.model_path / "tokens.txt"),
+                        num_threads=threads,
+                        sample_rate=16000,
+                        feature_dim=80,
+                        decoding_method="greedy_search",
+                    )
+                    self.head = "rnnt"
+                    log.info("Shenava-Koochik-v1.5 RNNT ready from %s", self.model_path)
+                else:
+                    return False
                 self.last_error = None
-                log.info("Whisper large Farsi v1 ready")
                 return True
             except Exception as exc:  # noqa: BLE001
                 self.last_error = str(exc)
-                log.error("Failed to load Whisper: %s", exc)
-                self._model = None
+                log.error("Failed to load Shenava: %s", exc)
+                self._recognizer = None
                 return False
 
     def transcribe(self, audio_data: bytes, sample_rate: int = 16000) -> str:
@@ -93,25 +104,17 @@ class WhisperSTT:
             return ""
         try:
             audio = _pcm16_to_float32(audio_data, sample_rate)
-            if audio.size < 1600:
+            if audio.size < 2400:
                 return ""
             rms = float(np.sqrt(np.mean(np.square(audio))))
-            if rms < 0.012:
+            if rms < 0.01:
                 return ""
             with self._lock:
-                segments, info = self._model.transcribe(
-                    audio,
-                    language="fa",
-                    beam_size=1,
-                    vad_filter=False,
-                    condition_on_previous_text=False,
-                    without_timestamps=True,
-                    no_speech_threshold=0.6,
-                    compression_ratio_threshold=2.4,
-                )
-                if getattr(info, "no_speech_prob", 0) > 0.7:
-                    return ""
-                text = "".join(seg.text for seg in segments).strip()
+                stream = self._recognizer.create_stream()
+                stream.accept_waveform(16000, audio)
+                self._recognizer.decode_stream(stream)
+                raw = self._recognizer.get_result(stream)
+                text = (getattr(raw, "text", None) or str(raw or "")).strip()
             log.info("STT transcript: %s", text)
             return text
         except Exception as exc:  # noqa: BLE001
@@ -119,7 +122,6 @@ class WhisperSTT:
             return ""
 
     def transcribe_partial(self, recognizer, audio_chunk: bytes) -> tuple[str | None, str]:
-        """Whisper is utterance-based; live path uses VAD then transcribe()."""
         return None, ""
 
     def make_recognizer(self, sample_rate: int = 16000):
@@ -138,5 +140,4 @@ def _pcm16_to_float32(audio_data: bytes, sample_rate: int) -> np.ndarray:
     return np.interp(x_new, x_old, pcm).astype(np.float32)
 
 
-# Process-wide singleton — Whisper weights are heavy.
-stt = WhisperSTT()
+stt = ShenavaSTT()

@@ -1,4 +1,4 @@
-"""Windows-friendly: py scripts/download_whisper.py → Shenava."""
+"""Windows-friendly: py scripts/download_shenava.py"""
 
 from __future__ import annotations
 

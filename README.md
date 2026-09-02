@@ -51,20 +51,15 @@ KAVENEGAR_SENDER=1000xxxx
 | نیاز | ابزار |
 | --- | --- |
 | گفتگو / میکروفون | همین وب‌اپ + `/voice/live` |
-| STT | Whisper large Farsi v1 (`vhdm/whisper-large-fa-v1`)، آفلاین روی CPU |
-| TTS منشی | Piper `fa_IR-mana-medium`، آفلاین |
-| تماس با فروشنده | Kavenegar `call/maketts` |
-| پیامک شماره مشتری | Kavenegar SMS |
-| تماس دستی | `tel:` روی صفحه |
+| STT | شنوا کوچیک v1.5 (`Reza2kn/Shenava-Koochik-v1.5`)، هد CTC |
+| پاسخ منشی | فقط متن روی صفحه؛ نرم‌افزار حرف نمی‌زند |
 
-مدل گفتار را یک‌بار دانلود کنید (حدود ۱ گیگابایت پس از تبدیل int8):
+مدل شنیدن را یک‌بار دانلود کنید (~۴۵۰ مگابایت):
 
 ```bash
-python -m src download-whisper
+python -m src download-shenava
 # Windows:
-py -m src download-whisper
-# or:
-py scripts/download_whisper.py
+py -m src download-shenava
 ```
 
 ## تست

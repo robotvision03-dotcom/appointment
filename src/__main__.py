@@ -1,6 +1,6 @@
 """Run the FastAPI app: python -m src
 
-Also: python -m src download-whisper
+Download STT: python -m src download-shenava
 """
 
 from __future__ import annotations
@@ -9,8 +9,9 @@ import sys
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] in {"download-whisper", "download_whisper"}:
-        from src.download_whisper import main
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd in {"download-shenava", "download_shenava", "download-whisper", "download_whisper"}:
+        from src.download_shenava import main
 
         raise SystemExit(main())
 

@@ -55,6 +55,10 @@ class Config:
     whisper_model_path: Path
     whisper_device: str
     whisper_compute_type: str
+    shenava_model_id: str
+    shenava_model_path: Path
+    shenava_head: str
+    shenava_threads: int
     piper_model_path: Path
     piper_config_path: Path
 
@@ -72,9 +76,9 @@ class Config:
     # Audio / VAD
     twilio_sample_rate: int = 8000
     stt_sample_rate: int = 16000
-    vad_silence_ms: int = 900
-    min_utterance_ms: int = 400
-    energy_threshold: int = 180
+    vad_silence_ms: int = 700
+    min_utterance_ms: int = 700
+    energy_threshold: int = 120
 
     @property
     def twilio_configured(self) -> bool:
@@ -100,6 +104,12 @@ def load_config() -> Config:
         ),
         whisper_device=_env("WHISPER_DEVICE", "auto").lower() or "auto",
         whisper_compute_type=_env("WHISPER_COMPUTE_TYPE", "int8") or "int8",
+        shenava_model_id=_env("SHENAVA_MODEL_ID", "Reza2kn/Shenava-Koochik-v1.5"),
+        shenava_model_path=_resolve_path(
+            _env("SHENAVA_MODEL_PATH", "./models/shenava-koochik-v1.5")
+        ),
+        shenava_head=_env("SHENAVA_HEAD", "ctc").lower() or "ctc",
+        shenava_threads=int(_env("SHENAVA_THREADS", "4") or "4"),
         piper_model_path=_resolve_path(
             _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx")
         ),

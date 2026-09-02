@@ -7,7 +7,6 @@ from typing import Any
 from src.call_manager import call_manager
 from src.handoff import start_warm_transfer
 from src.sms import send_booking_sms
-from src.tts import tts
 from src.utils import log
 
 
@@ -16,8 +15,7 @@ def sip_turn(session_id: str, text: str, phone: str = "") -> dict[str, Any]:
     One dialogue turn for Asterisk AGI / dialplan.
 
     Typical Iran setup: SIP trunk from MCI/Shatel/Respina into Asterisk,
-    SpeechToText via local Whisper large Farsi v1 (or a local ASR), then POST here, then
-    Playback() the WAV from /api/tts.
+    SpeechToText via local Shenava-Koochik-v1.5, then POST here. Replies are text.
     """
     if call_manager.get(session_id) is None:
         call_manager.start_call(session_id, from_number=phone)
@@ -39,4 +37,4 @@ def sip_turn(session_id: str, text: str, phone: str = "") -> dict[str, Any]:
 def sip_greeting_wav_path(session_id: str, phone: str = "") -> bytes:
     if call_manager.get(session_id) is None:
         call_manager.start_call(session_id, from_number=phone)
-    return tts.synthesize_wav(call_manager.greeting())
+    return b""

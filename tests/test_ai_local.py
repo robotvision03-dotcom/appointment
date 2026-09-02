@@ -14,7 +14,6 @@ sys.path.insert(0, str(ROOT))
 from src import db  # noqa: E402
 from src.call_manager import call_manager  # noqa: E402
 from src.stt import stt  # noqa: E402
-from src.tts import tts  # noqa: E402
 from src.utils import log  # noqa: E402
 
 
@@ -50,7 +49,6 @@ def main() -> int:
     args = parser.parse_args()
 
     print("STT available:", stt.available)
-    print("TTS available:", tts.available)
 
     if args.wav:
         if not args.wav.exists():
@@ -58,7 +56,7 @@ def main() -> int:
             return 1
         pcm, rate = read_wav_pcm(args.wav)
         text = stt.transcribe(pcm, sample_rate=rate)
-        print("TRANSCRIPT:", text or "(empty — is Whisper large Farsi v1 installed? python -m src.download_whisper)")
+        print("TRANSCRIPT:", text or "(empty — run: python -m src download-shenava)")
         if text:
             db.init_db()
             sid = "wav-session"
@@ -66,14 +64,8 @@ def main() -> int:
             call_manager.start_call(sid)
             result = call_manager.handle_user_text(sid, text)
             print("REPLY:", result["reply"])
-            out = Path("/tmp/persian_agent_reply.wav")
-            tts.synthesize_to_file(result["reply"], filename=out.name)
-            print("Wrote TTS to", out)
 
     run_dialogue()
-
-    sample = tts.synthesize("نوبت شما ثبت شد.")
-    print("TTS bytes:", len(sample))
     log.info("Local AI pipeline test finished")
     return 0
 
