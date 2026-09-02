@@ -12,7 +12,19 @@ os.environ.setdefault("DB_PATH", str(Path(tempfile.gettempdir()) / "pva_test.db"
 
 from src import db
 from src.call_manager import call_manager
+from src.stt import _sherpa_text
 from src.utils import parse_relative_date, parse_time, wants_transfer
+
+
+def test_sherpa_empty_result_is_not_json_dump():
+    class Fake:
+        text = ""
+
+        def __str__(self):
+            return '{"lang": "", "text": "", "ys_log_probs": []}'
+
+    assert _sherpa_text(Fake()) == ""
+    assert _sherpa_text({"text": "آرایشگاه", "ys_log_probs": []}) == "آرایشگاه"
 
 
 @pytest.fixture()

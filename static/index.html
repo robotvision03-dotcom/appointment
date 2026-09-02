@@ -536,13 +536,14 @@
       const ws = new WebSocket(`${proto}://${location.host}/voice/live`);
       liveWs = ws;
       ws.binaryType = "arraybuffer";
-      ws.onopen = async () => {
+        ws.onopen = async () => {
         liveBtn.textContent = "قطع تماس صوتی";
         liveBtn.classList.add("on");
-        ws.send(JSON.stringify({ event: "start", session_id: sessionId, phone: phoneEl.value.trim() }));
         try {
           liveStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-          liveCtx = new AudioContext({ sampleRate: 16000 });
+          liveCtx = new AudioContext();
+          const rate = liveCtx.sampleRate || 16000;
+          ws.send(JSON.stringify({ event: "start", session_id: sessionId, phone: phoneEl.value.trim(), sample_rate: rate }));
           const src = liveCtx.createMediaStreamSource(liveStream);
           const proc = liveCtx.createScriptProcessor(4096, 1, 1);
           proc.onaudioprocess = (ev) => {

@@ -49,6 +49,12 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                 event = msg.get("event")
                 if event == "start":
                     call_sid = str(msg.get("session_id") or "browser-live")
+                    try:
+                        sample_rate = int(msg.get("sample_rate") or config.stt_sample_rate)
+                    except (TypeError, ValueError):
+                        sample_rate = config.stt_sample_rate
+                    if sample_rate < 8000:
+                        sample_rate = config.stt_sample_rate
                     phone = str(msg.get("phone") or "")
                     state = call_manager.get(call_sid) or call_manager.start_call(
                         call_sid, from_number=phone
@@ -56,7 +62,12 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                     if phone:
                         state.from_number = phone
                     state.phase = PHASE_ASK_SERVICE
-                    greeting = call_manager.greeting()
+                    log.info(
+                        "Browser voice start sid=%s sample_rate=%s stt=%s",
+                        call_sid,
+                        sample_rate,
+                        stt.available,
+                    )
                     await _send_assistant(websocket, greeting, "ask_service", "continue")
                     await websocket.send_json(
                         {

@@ -22,8 +22,23 @@ def _rnnt_ready(path: Path) -> bool:
     )
 
 
+def _sherpa_text(raw) -> str:
+    """Only the transcript string — never stringify the whole sherpa result object."""
+    if raw is None:
+        return ""
+    text = getattr(raw, "text", None)
+    if text is None and isinstance(raw, dict):
+        text = raw.get("text")
+    if not isinstance(text, str):
+        return ""
+    text = text.strip()
+    if text.startswith("{") and "ys_log_probs" in text:
+        return ""
+    return text
+
+
 class ShenavaSTT:
-    """16 kHz mono PCM → Persian text. CTC head of Koochik v1.5 (8.12% WER)."""
+    """16 kHz mono PCM → Persian text via Shenava-Koochik-v1.5."""
 
     def __init__(self) -> None:
         self.model_id = config.shenava_model_id
@@ -117,10 +132,10 @@ class ShenavaSTT:
                 return ""
             with self._lock:
                 stream = self._recognizer.create_stream()
-                stream.accept_waveform(16000, audio)
+                samples = np.ascontiguousarray(audio, dtype=np.float32)
+                stream.accept_waveform(16000, samples)
                 self._recognizer.decode_stream(stream)
-                raw = stream.result
-                text = (getattr(raw, "text", None) or str(raw or "")).strip()
+                text = _sherpa_text(stream.result)
             log.info("STT transcript: %s", text)
             return text
         except Exception as exc:  # noqa: BLE001

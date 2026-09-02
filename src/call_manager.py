@@ -129,6 +129,8 @@ class CallManager:
             state = self.start_call(call_sid)
 
         text = normalize_persian(user_text)
+        if text.startswith("{") and "ys_log_probs" in text:
+            text = ""
         if not text:
             reply = ASK_REPEAT
             self.update_context(call_sid, user_text, reply)
