@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import date
 
 from fastapi import FastAPI, Request, WebSocket
@@ -34,6 +35,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()
+    threading.Thread(target=stt.ensure_loaded, name="stt-preload", daemon=True).start()
     log.info(
         "Car office ready address=%s hearing=%s stt=%s",
         config.office_address,
@@ -65,6 +67,13 @@ def health() -> dict:
             "gooya": {
                 "configured": bool(config.gooya_api_url and config.gooya_api_token),
                 "engine": "gooya-v1.4",
+            },
+            "whisper": {
+                "id": config.whisper_model_id,
+                "available": bool(
+                    getattr(stt, "whisper", None) and stt.whisper.available
+                ),
+                "path": str(config.whisper_model_path),
             },
             "mode": getattr(stt, "mode", config.stt_engine),
         },

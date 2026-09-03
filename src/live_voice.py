@@ -87,9 +87,8 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                             "message": None
                             if stt.available
                             else (
-                                "گویا v1.4 بدون کلید است و شنوا نصب نیست. "
-                                "GOOYA_API_URL و GOOYA_API_TOKEN را در .env بگذارید "
-                                "یا python -m src download-shenava را اجرا کنید."
+                                "مدل شنیدن آماده نیست. python -m src download-whisper را اجرا کنید "
+                                "(nezamisafa/whisper-persian-v4) یا متن را تایپ کنید."
                             ),
                         }
                     )

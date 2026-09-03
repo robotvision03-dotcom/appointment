@@ -306,8 +306,10 @@
       }
       const engine = (h.stt && h.stt.engine) ? h.stt.engine : "stt";
       const gooya = h.stt && h.stt.gooya && h.stt.gooya.configured;
+      const whisper = h.stt && h.stt.whisper && h.stt.whisper.available;
       const pills = [
         ["شنوا " + engine, h.stt && h.stt.available],
+        ["ویسپر فارسی v4", !!whisper],
         ["گویا v1.4", !!gooya],
         ["خودرو در فهرست", true],
         ["پیامک", h.sms && h.sms.available],

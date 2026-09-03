@@ -4,7 +4,7 @@ python-dotenv==1.1.0
 httpx==0.28.1
 twilio==9.5.2
 sherpa-onnx>=1.10.0
-huggingface_hub>=0.26.0
+faster-whisper>=1.0.0
 numpy>=1.26.0
 pydantic==2.11.3
 websockets==15.0.1

@@ -60,6 +60,11 @@ class Config:
     gooya_api_token: str
     gooya_timeout_s: float
     stt_engine: str
+    whisper_model_id: str
+    whisper_model_path: Path
+    whisper_ct2_repo: str
+    whisper_threads: int
+    whisper_compute: str
     piper_model_path: Path
     piper_config_path: Path
 
@@ -115,7 +120,14 @@ def load_config() -> Config:
         gooya_api_url=_env("GOOYA_API_URL"),
         gooya_api_token=_env("GOOYA_API_TOKEN"),
         gooya_timeout_s=float(_env("GOOYA_TIMEOUT_S", "25") or "25"),
-        stt_engine=(_env("STT_ENGINE", "auto") or "auto").lower(),
+        stt_engine=(_env("STT_ENGINE", "whisper") or "whisper").lower(),
+        whisper_model_id=_env("WHISPER_MODEL_ID", "nezamisafa/whisper-persian-v4"),
+        whisper_model_path=_resolve_path(
+            _env("WHISPER_MODEL_PATH", "./models/whisper-persian-v4-ct2")
+        ),
+        whisper_ct2_repo=_env("WHISPER_CT2_REPO", "AlexAnoshka/fast-whisper-persian-v4"),
+        whisper_threads=int(_env("WHISPER_THREADS", "4") or "4"),
+        whisper_compute=_env("WHISPER_COMPUTE", "int8") or "int8",
         piper_model_path=_resolve_path(
             _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx")
         ),

@@ -47,28 +47,17 @@ python -m src
 
 ChatGPT هنگام مکالمه دو کار جدا می‌کند؛ هیچ مدل ASR به‌تنهایی «مثل چت‌جی‌پی‌تی می‌فهمد»:
 
-1. **شنیدن (ASR)** — موج صدا → حروف. **Gooya v1.4** is preferred when `GOOYA_API_URL` and `GOOYA_API_TOKEN` are set (commercial API; no public Hugging Face weights). Otherwise **Shenava-Koochik CTC** runs on this machine.
+1. **شنیدن (ASR)** — **nezamisafa/whisper-persian-v4** (Whisper large-v3 fine-tuned on Persian, ~8.7% WER). Runtime is CTranslate2 int8 via faster-whisper so it fits this CPU. Shenava remains fallback; Gooya only if you have a vendor token.
 2. **فهمیدن (NLU)** — متن → خودرو / سال / کیلومتر. واژه‌نامهٔ خودرو + اصلاح آوایی + در صورت نیاز Ollama.
 
 ## شنیدن گفتار
 
-Gooya v1.4 cannot be downloaded. After you receive a vendor URL and bearer token:
-
 ```bash
-# .env
-STT_ENGINE=auto
-GOOYA_API_URL=https://YOUR_HOST/transcribe
-GOOYA_API_TOKEN=...
-python -m src download-gooya
+python -m src download-whisper    # ~1.6GB, nezamisafa/whisper-persian-v4
 python -m src
 ```
 
-On-device fallback (already installed):
-
-```powershell
-py -m src download-shenava
-py -m src
-```
+`STT_ENGINE=whisper` in `.env`. The checkpoint is forced to `language=fa` and biased with Iranian car names.
 
 ## تست
 
