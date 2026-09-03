@@ -127,8 +127,8 @@ def load_config() -> Config:
             _env("WHISPER_MODEL_PATH", "./models/whisper-persian-v4-ct2")
         ),
         whisper_ct2_repo=_env("WHISPER_CT2_REPO", "AlexAnoshka/fast-whisper-persian-v4"),
-        # 0 = every core. A car-name prompt is off by default; it triggers
-        # English hallucinations in this fine-tune.
+        # CTranslate2 slows down badly past the physical core count: 12 threads
+        # measured ~4x slower than 4 on the same machine. 0 = auto-cap.
         whisper_threads=int(_env("WHISPER_THREADS", "0") or "0"),
         whisper_compute=_env("WHISPER_COMPUTE", "int8") or "int8",
         whisper_prompt=_env("WHISPER_PROMPT"),

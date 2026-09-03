@@ -7,6 +7,7 @@ import json
 import time
 
 from fastapi import WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from src.call_manager import PHASE_ASK_TYPE, call_manager
 from src.config import config
@@ -38,7 +39,10 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
     sample_rate = config.stt_sample_rate
     noise_floor = 28.0
     peak_energy = 0.0
-    last_empty_notice = 0.0
+    # Whisper large-v3 needs seconds per utterance, so it runs off the receive
+    # loop; otherwise incoming audio piles up and the reply lands after hangup.
+    busy: dict[str, bool] = {"stt": False}
+    tasks: set[asyncio.Task] = set()
 
     log.info("Browser voice WebSocket connected")
 
@@ -149,53 +153,95 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                             if peak_energy < max(config.energy_threshold, noise_floor * 2.5):
                                 peak_energy = 0.0
                                 continue
-                            await websocket.send_json(
-                                {"event": "dictation", "text": "…", "hearing": True}
-                            )
-                            transcript = await asyncio.to_thread(
-                                stt.transcribe, chunk, sample_rate
-                            )
-                            if transcript:
-                                state = call_manager.get(call_sid)
-                                phase = state.phase if state else PHASE_ASK_TYPE
-                                info = state.patient_info if state else {}
-                                understood = await asyncio.to_thread(
-                                    understand, transcript, phase, info
-                                )
-                                shown = transcript
-                                canonical = understood.get("text") or transcript
-                                if canonical != transcript:
-                                    shown = f"{transcript} → {canonical}"
-                                await websocket.send_json(
-                                    {"event": "dictation", "text": canonical}
-                                )
-                                await _handle_utterance(
-                                    websocket, call_sid, canonical, echo_text=shown
-                                )
-                            else:
-                                log.info(
-                                    "STT empty sid=%s bytes=%s rate=%s last_rms=%s peak=%.0f",
-                                    call_sid,
-                                    len(chunk),
-                                    sample_rate,
-                                    energy,
-                                    peak_energy,
-                                )
-                                now = time.monotonic()
-                                if now - last_empty_notice > 8:
-                                    last_empty_notice = now
-                                    await websocket.send_json(
-                                        {
-                                            "event": "status",
-                                            "message": "هنوز گفتار واضحی نبود. پس از صدای کلام، نام خودرو را بگویید.",
-                                        }
-                                    )
                             peak_energy = 0.0
+                            if busy["stt"]:
+                                # Whisper is still busy; queueing would only
+                                # replay stale audio minutes later.
+                                log.info("Dropping utterance, STT busy sid=%s", call_sid)
+                                await _send(
+                                    websocket,
+                                    {
+                                        "event": "status",
+                                        "message": "هنوز در حال نوشتن جملهٔ قبلی هستم؛ یک لحظه صبر کنید.",
+                                    },
+                                )
+                                continue
+                            busy["stt"] = True
+                            await _send(
+                                websocket,
+                                {"event": "dictation", "text": "…", "hearing": True},
+                            )
+                            task = asyncio.create_task(
+                                _transcribe_and_reply(
+                                    websocket, call_sid, chunk, sample_rate, busy
+                                )
+                            )
+                            tasks.add(task)
+                            task.add_done_callback(tasks.discard)
 
     except WebSocketDisconnect:
         log.info("Browser voice disconnected %s", call_sid)
     except Exception as exc:  # noqa: BLE001
         log.exception("Browser voice error: %s", exc)
+    finally:
+        for task in list(tasks):
+            task.cancel()
+
+
+async def _send(websocket: WebSocket, payload: dict) -> bool:
+    """Send unless the browser already hung up."""
+    if websocket.client_state != WebSocketState.CONNECTED:
+        return False
+    try:
+        await websocket.send_json(payload)
+        return True
+    except (WebSocketDisconnect, RuntimeError) as exc:
+        log.info("Browser voice send skipped: %s", exc)
+        return False
+
+
+async def _transcribe_and_reply(
+    websocket: WebSocket,
+    call_sid: str,
+    chunk: bytes,
+    sample_rate: int,
+    busy: dict[str, bool],
+) -> None:
+    started = time.monotonic()
+    try:
+        transcript = await asyncio.to_thread(stt.transcribe, chunk, sample_rate)
+        elapsed = time.monotonic() - started
+        if not transcript:
+            log.info(
+                "STT empty sid=%s bytes=%s rate=%s took=%.1fs",
+                call_sid,
+                len(chunk),
+                sample_rate,
+                elapsed,
+            )
+            await _send(
+                websocket,
+                {
+                    "event": "status",
+                    "message": "هنوز گفتار واضحی نبود. پس از صدای کلام، نام خودرو را بگویید.",
+                },
+            )
+            return
+        if websocket.client_state != WebSocketState.CONNECTED:
+            log.info("Transcript %r arrived after hangup (%.1fs)", transcript, elapsed)
+            return
+        state = call_manager.get(call_sid)
+        phase = state.phase if state else PHASE_ASK_TYPE
+        info = state.patient_info if state else {}
+        understood = await asyncio.to_thread(understand, transcript, phase, info)
+        canonical = understood.get("text") or transcript
+        shown = transcript if canonical == transcript else f"{transcript} → {canonical}"
+        await _send(websocket, {"event": "dictation", "text": canonical})
+        await _handle_utterance(websocket, call_sid, canonical, echo_text=shown)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Transcription task failed: %s", exc)
+    finally:
+        busy["stt"] = False
 
 
 async def _handle_utterance(
@@ -206,7 +252,7 @@ async def _handle_utterance(
     echo_text: str | None = None,
 ) -> None:
     if echo_user:
-        await websocket.send_json({"event": "user", "text": echo_text or text})
+        await _send(websocket, {"event": "user", "text": echo_text or text})
     result = await asyncio.to_thread(call_manager.handle_user_text, call_sid, text)
     if result.get("intent") == "book":
         await asyncio.to_thread(send_booking_sms, call_sid)
@@ -240,4 +286,4 @@ async def _send_assistant(
     payload = {"event": "assistant", "text": text, "phase": phase, "intent": intent}
     if extra:
         payload.update({k: v for k, v in extra.items() if v is not None})
-    await websocket.send_json(payload)
+    await _send(websocket, payload)

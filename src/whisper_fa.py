@@ -35,10 +35,18 @@ def _car_prompt() -> str:
 
 
 _PERSIAN = re.compile(r"[\u0600-\u06FF]")
-_LATIN = re.compile(r"[A-Za-z]")
+# Any letter that is not Persian/Arabic. Whisper slips into Latin («Pژو») and
+# Cyrillic («ежоپارس») mid-word; neither belongs in a spoken Persian name.
+_FOREIGN_LETTER = re.compile(r"[^\W\d_\u0600-\u06FF]")
 # Junk is punctuation with no letter or digit. Digits are real answers:
 # a model year, a mileage, or a phone number is often all the seller says.
 _JUNK = re.compile(r"^\W*$")
+
+
+def _auto_threads() -> int:
+    """Physical cores, capped. Oversubscribing CTranslate2 costs more than it buys."""
+    cores = os.cpu_count() or 4
+    return max(1, min(4, cores // 2 if cores > 4 else cores))
 
 
 def clean_transcript(text: str) -> str:
@@ -54,8 +62,8 @@ def clean_transcript(text: str) -> str:
         stripped = token.strip(".,!?;:،؛؟«»\"'()[]…")
         if not stripped:
             continue
-        if _PERSIAN.search(stripped) and _LATIN.search(stripped):
-            stripped = _LATIN.sub("", stripped)
+        if _PERSIAN.search(stripped) and _FOREIGN_LETTER.search(stripped):
+            stripped = _FOREIGN_LETTER.sub("", stripped)
         if stripped:
             out.append(stripped)
     joined = " ".join(out).strip()
@@ -132,8 +140,7 @@ class WhisperPersianSTT:
                     log.error("%s", self.last_error)
                     return False
 
-                threads = int(config.whisper_threads) or (os.cpu_count() or 4)
-                threads = max(1, threads)
+                threads = max(1, int(config.whisper_threads) or _auto_threads())
                 self._model = WhisperModel(
                     str(self.model_path),
                     device="cpu",
