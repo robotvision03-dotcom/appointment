@@ -26,6 +26,13 @@ def _ready(path: Path) -> bool:
 
 
 def download(force: bool = False) -> Path:
+    from importlib.util import find_spec
+
+    if find_spec("faster_whisper") is None:
+        print("faster-whisper is not installed. Run first:")
+        print("  pip install -r requirements.txt")
+        raise SystemExit(2)
+
     dest = config.whisper_model_path
     dest.mkdir(parents=True, exist_ok=True)
     if _ready(dest) and not force:

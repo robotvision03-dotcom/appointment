@@ -53,11 +53,26 @@ ChatGPT هنگام مکالمه دو کار جدا می‌کند؛ هیچ مدل
 ## شنیدن گفتار
 
 ```bash
+pip install -r requirements.txt   # faster-whisper لازم است
 python -m src download-whisper    # ~1.6GB, nezamisafa/whisper-persian-v4
 python -m src
 ```
 
+اگر `faster_whisper` نصب نباشد، برنامه بی‌صدا روی Shenava می‌افتد؛ در `/health` مقدار
+`stt.whisper.runtime_installed` را ببینید.
+
 `STT_ENGINE=whisper` in `.env`. The checkpoint is forced to `language=fa` and biased with Iranian car names.
+
+## سال مدل
+
+`src/years.py` همهٔ شکل‌های گفتاری سال‌های **۱۳۷۰ تا ۱۴۱۰** را از قبل می‌سازد،
+پس این‌ها همه یعنی ۱۳۸۸:
+
+هزار و سیصد و هشتاد و هشت · یک هزار و سیصد و هشتاد و هشت · سیصد و هشتاد و هشت ·
+هشتاد و هشت · هشت و هشت · یک سه هشت هشت · ۱۳۸۸ · ۳۸۸ · ۸۸
+
+«نو» به‌جای «نه» هم پذیرفته می‌شود، پس «یک سه نو نو» = ۱۳۹۹. اگر جمله در جدول
+نبود، جمع‌کنندهٔ عددی و بعد Ollama (در صورت فعال بودن) امتحان می‌شوند.
 
 ## تست
 

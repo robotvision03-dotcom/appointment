@@ -222,9 +222,15 @@ class HearingSTT:
             prefer = "whisper"
         self.mode = prefer
         if self.mode in {"whisper", "auto"} and not self.whisper.available:
-            log.warning(
-                "Whisper Persian v4 missing. Run: python -m src download-whisper"
-            )
+            if not self.whisper.runtime_installed:
+                log.warning(
+                    "Whisper Persian v4 skipped: faster-whisper is not installed. "
+                    "Run: pip install -r requirements.txt"
+                )
+            else:
+                log.warning(
+                    "Whisper Persian v4 weights missing. Run: python -m src download-whisper"
+                )
 
     @property
     def engine(self) -> str:

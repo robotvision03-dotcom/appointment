@@ -66,11 +66,18 @@ class WhisperPersianSTT:
             )
 
     @property
+    def runtime_installed(self) -> bool:
+        from importlib.util import find_spec
+
+        return find_spec("faster_whisper") is not None
+
+    @property
     def available(self) -> bool:
         p = self.model_path
-        return (p / "model.bin").is_file() and (
+        has_files = (p / "model.bin").is_file() and (
             (p / "vocabulary.json").is_file() or (p / "tokenizer.json").is_file()
         )
+        return has_files and self.runtime_installed
 
     @property
     def loaded(self) -> bool:
@@ -85,7 +92,15 @@ class WhisperPersianSTT:
             if self._model is not None:
                 return True
             try:
-                from faster_whisper import WhisperModel
+                try:
+                    from faster_whisper import WhisperModel
+                except ImportError:
+                    self.last_error = (
+                        "faster-whisper نصب نیست. اجرا کنید: "
+                        "pip install -r requirements.txt"
+                    )
+                    log.error("%s", self.last_error)
+                    return False
 
                 threads = max(1, int(config.whisper_threads))
                 self._model = WhisperModel(
