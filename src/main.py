@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from datetime import date
 
 from fastapi import FastAPI, Request, WebSocket
@@ -35,7 +36,13 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()
-    threading.Thread(target=stt.ensure_loaded, name="stt-preload", daemon=True).start()
+
+    def _warm() -> None:
+        started = time.monotonic()
+        if stt.ensure_loaded():
+            log.info("Hearing model warm in %.1fs", time.monotonic() - started)
+
+    threading.Thread(target=_warm, name="stt-preload", daemon=True).start()
     log.info(
         "Car office ready address=%s hearing=%s stt=%s",
         config.office_address,

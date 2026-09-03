@@ -41,7 +41,10 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
     peak_energy = 0.0
     # Whisper large-v3 needs seconds per utterance, so it runs off the receive
     # loop; otherwise incoming audio piles up and the reply lands after hangup.
-    busy: dict[str, bool] = {"stt": False}
+    # Only the newest utterance waits: older audio is stale by the time we
+    # would reach it, and the seller has already moved on.
+    pending: dict[str, bytes | None] = {"chunk": None}
+    worker: asyncio.Task | None = None
     tasks: set[asyncio.Task] = set()
 
     log.info("Browser voice WebSocket connected")
@@ -154,30 +157,23 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                                 peak_energy = 0.0
                                 continue
                             peak_energy = 0.0
-                            if busy["stt"]:
-                                # Whisper is still busy; queueing would only
-                                # replay stale audio minutes later.
-                                log.info("Dropping utterance, STT busy sid=%s", call_sid)
-                                await _send(
-                                    websocket,
-                                    {
-                                        "event": "status",
-                                        "message": "هنوز در حال نوشتن جملهٔ قبلی هستم؛ یک لحظه صبر کنید.",
-                                    },
-                                )
-                                continue
-                            busy["stt"] = True
+                            queued = _queue_latest(pending, chunk)
                             await _send(
                                 websocket,
                                 {"event": "dictation", "text": "…", "hearing": True},
                             )
-                            task = asyncio.create_task(
-                                _transcribe_and_reply(
-                                    websocket, call_sid, chunk, sample_rate, busy
+                            if queued:
+                                log.info(
+                                    "Utterance queued behind a slower one sid=%s", call_sid
                                 )
-                            )
-                            tasks.add(task)
-                            task.add_done_callback(tasks.discard)
+                            if worker is None or worker.done():
+                                worker = asyncio.create_task(
+                                    _drain_utterances(
+                                        websocket, call_sid, sample_rate, pending
+                                    )
+                                )
+                                tasks.add(worker)
+                                worker.add_done_callback(tasks.discard)
 
     except WebSocketDisconnect:
         log.info("Browser voice disconnected %s", call_sid)
@@ -200,12 +196,34 @@ async def _send(websocket: WebSocket, payload: dict) -> bool:
         return False
 
 
+def _queue_latest(pending: dict[str, bytes | None], chunk: bytes) -> bool:
+    """Keep only the newest utterance. Returns True when it displaced one."""
+    replaced = pending["chunk"] is not None
+    pending["chunk"] = chunk
+    return replaced
+
+
+async def _drain_utterances(
+    websocket: WebSocket,
+    call_sid: str,
+    sample_rate: int,
+    pending: dict[str, bytes | None],
+) -> None:
+    while True:
+        chunk = pending["chunk"]
+        if chunk is None:
+            return
+        pending["chunk"] = None
+        await _transcribe_and_reply(websocket, call_sid, chunk, sample_rate)
+        if websocket.client_state != WebSocketState.CONNECTED:
+            return
+
+
 async def _transcribe_and_reply(
     websocket: WebSocket,
     call_sid: str,
     chunk: bytes,
     sample_rate: int,
-    busy: dict[str, bool],
 ) -> None:
     started = time.monotonic()
     try:
@@ -240,8 +258,6 @@ async def _transcribe_and_reply(
         await _handle_utterance(websocket, call_sid, canonical, echo_text=shown)
     except Exception as exc:  # noqa: BLE001
         log.exception("Transcription task failed: %s", exc)
-    finally:
-        busy["stt"] = False
 
 
 async def _handle_utterance(

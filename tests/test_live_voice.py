@@ -92,6 +92,39 @@ def test_slow_whisper_still_reaches_the_browser(tmp_path, monkeypatch):
         _drain_for_assistant(ws, "سمند")
 
 
+def test_room_noise_never_reaches_whisper(tmp_path, monkeypatch):
+    """A noise burst must not spend a Whisper pass and block real speech."""
+    calls: list[bytes] = []
+
+    def transcribe(chunk: bytes, sample_rate: int = 16000) -> str:
+        calls.append(chunk)
+        return "پژو پارس"
+
+    monkeypatch.setattr(live_voice.stt, "transcribe", transcribe)
+    monkeypatch.setattr(type(live_voice.stt), "available", property(lambda self: True))
+    monkeypatch.setattr(db.config, "db_path", tmp_path / "noise.db")
+    db.init_db(tmp_path / "noise.db")
+
+    call_manager.end_call("noise-test")
+    client = TestClient(app)
+    with client.websocket_connect("/voice/live") as ws:
+        ws.send_json({"event": "start", "session_id": "noise-test", "sample_rate": 16000})
+        ws.receive_json()  # greeting
+        ws.receive_json()  # status
+        for _ in range(40):
+            # Room hiss: the level that used to trigger a full transcription.
+            ws.send_bytes(_speech(0.05, amplitude=0.006))
+        ws.send_json({"event": "stop"})
+    assert calls == [], "noise was sent to Whisper"
+
+
+def test_newest_utterance_wins_when_whisper_lags():
+    pending: dict[str, bytes | None] = {"chunk": None}
+    assert live_voice._queue_latest(pending, b"first") is False
+    assert live_voice._queue_latest(pending, b"second") is True
+    assert pending["chunk"] == b"second"
+
+
 def test_send_is_skipped_after_hangup():
     class Closed:
         client_state = live_voice.WebSocketState.DISCONNECTED

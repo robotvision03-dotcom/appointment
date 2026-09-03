@@ -49,9 +49,14 @@ def noise_gate(wave: np.ndarray, floor: float) -> np.ndarray:
     return gated.astype(np.float32)
 
 
-def speech_onset(energy: float, noise_floor: float, min_energy: float = 55.0) -> bool:
-    """True when a speech highlight rises above background noise (Grok-style listen)."""
-    return energy >= max(min_energy, noise_floor * 3.4 + 18.0)
+def speech_onset(energy: float, noise_floor: float, min_energy: float = 900.0) -> bool:
+    """True when a speech highlight rises above background noise.
+
+    Measured on a laptop mic: room noise peaks around 200–950 RMS while spoken
+    words sit at 2500–3200, so the absolute floor matters more than the ratio.
+    A noise trigger is expensive here — it costs a whole Whisper pass.
+    """
+    return energy >= max(min_energy, noise_floor * 4.0 + 60.0)
 
 
 def update_noise_floor(noise_floor: float, energy: float, speaking: bool) -> float:

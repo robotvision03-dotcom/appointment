@@ -89,7 +89,7 @@ class Config:
     stt_sample_rate: int = 16000
     vad_silence_ms: int = 500
     min_utterance_ms: int = 400
-    energy_threshold: int = 50
+    energy_threshold: int = 900
 
     @property
     def twilio_configured(self) -> bool:
@@ -149,6 +149,7 @@ def load_config() -> Config:
         office_address=_env("OFFICE_ADDRESS", "خیابان ایثار، کوچه خواجه پلاک ۲"),
         office_hours_start=_env("OFFICE_HOURS_START", "09:00"),
         office_hours_end=_env("OFFICE_HOURS_END", "17:00"),
+        energy_threshold=int(_env("VAD_MIN_ENERGY", "900") or "900"),
     )
 
 
