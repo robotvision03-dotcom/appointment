@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import threading
 
 import numpy as np
@@ -32,6 +34,32 @@ def _car_prompt() -> str:
     return " ".join(names)
 
 
+_PERSIAN = re.compile(r"[\u0600-\u06FF]")
+_LATIN = re.compile(r"[A-Za-z]")
+_JUNK = re.compile(r"^[\W\d_\u200c]*$")
+
+
+def clean_transcript(text: str) -> str:
+    """Drop Whisper punctuation and Latin letters glued into Persian words.
+
+    Whisper writes «Pژو پانس.» when it slips into the Latin alphabet mid-word;
+    the Latin letter is never part of a spoken Persian car name.
+    """
+    if not text:
+        return ""
+    out: list[str] = []
+    for token in text.replace("\u200c", " ").split():
+        stripped = token.strip(".,!?;:،؛؟«»\"'()[]…")
+        if not stripped:
+            continue
+        if _PERSIAN.search(stripped) and _LATIN.search(stripped):
+            stripped = _LATIN.sub("", stripped)
+        if stripped:
+            out.append(stripped)
+    joined = " ".join(out).strip()
+    return "" if _JUNK.match(joined) else joined
+
+
 def _to_16k_float(audio_data: bytes, sample_rate: int) -> np.ndarray:
     import audioop
 
@@ -58,7 +86,7 @@ class WhisperPersianSTT:
         self.last_error: str | None = None
         self._model = None
         self._lock = threading.Lock()
-        self._prompt = _car_prompt()
+        self._prompt = config.whisper_prompt
         if not self.available:
             self.last_error = (
                 f"Whisper Persian v4 not found at {self.model_path}. "
@@ -102,7 +130,8 @@ class WhisperPersianSTT:
                     log.error("%s", self.last_error)
                     return False
 
-                threads = max(1, int(config.whisper_threads))
+                threads = int(config.whisper_threads) or (os.cpu_count() or 4)
+                threads = max(1, threads)
                 self._model = WhisperModel(
                     str(self.model_path),
                     device="cpu",
@@ -149,10 +178,12 @@ class WhisperPersianSTT:
                     vad_filter=False,
                     condition_on_previous_text=False,
                     without_timestamps=True,
-                    initial_prompt=self._prompt,
+                    # A car-name prompt makes this fine-tune drift into English
+                    # ("Pژو پانس.", " propagate"), so bias downstream instead.
+                    initial_prompt=self._prompt or None,
                     temperature=0.0,
                 )
-                text = "".join(seg.text for seg in segments).strip()
+                text = clean_transcript("".join(seg.text for seg in segments))
             lang = getattr(info, "language", "fa")
             log.info(
                 "Whisper v4 transcript=%r lang=%s samples=%s rms=%.4f",

@@ -8,6 +8,10 @@ from src.cars import parse_km, parse_year
 from src.lexicon import resolve_car
 from src.utils import log, normalize_persian
 
+# The lexicon already answers almost every turn, so the LLM is a short-budget
+# fallback. A long wait here is dead air for the caller.
+LLM_MAP_TIMEOUT_S = 4.0
+
 
 def understand(text: str, phase: str, info: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return canonical fields plus a display string (heard → corrected)."""
@@ -76,7 +80,7 @@ def _llm_map_year(heard: str) -> str | None:
         f"گفته: {heard}\n"
         'فقط JSON: {"year": 1388} یا {"year": null}'
     )
-    raw = llm.generate_response(prompt)
+    raw = llm.generate_response(prompt, timeout=LLM_MAP_TIMEOUT_S)
     from src.utils import extract_json_object
 
     parsed = extract_json_object(raw) if raw else None
@@ -109,7 +113,7 @@ def _llm_map_car(heard: str, info: dict[str, Any]) -> dict | None:
         f"قبلاً ثبت شده: {info}\n"
         'فقط JSON: {"make":"...","model":"..."} یا {"make":null,"model":null} اگر هیچ خودرویی نیست.'
     )
-    raw = llm.generate_response(prompt)
+    raw = llm.generate_response(prompt, timeout=LLM_MAP_TIMEOUT_S)
     from src.utils import extract_json_object
 
     parsed = extract_json_object(raw) if raw else None
