@@ -36,7 +36,9 @@ def _car_prompt() -> str:
 
 _PERSIAN = re.compile(r"[\u0600-\u06FF]")
 _LATIN = re.compile(r"[A-Za-z]")
-_JUNK = re.compile(r"^[\W\d_\u200c]*$")
+# Junk is punctuation with no letter or digit. Digits are real answers:
+# a model year, a mileage, or a phone number is often all the seller says.
+_JUNK = re.compile(r"^\W*$")
 
 
 def clean_transcript(text: str) -> str:

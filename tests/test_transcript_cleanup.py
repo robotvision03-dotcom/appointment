@@ -15,8 +15,18 @@ def test_pure_latin_model_codes_survive():
     assert clean_transcript("MVM X22") == "MVM X22"
 
 
+def test_numeric_answers_survive():
+    # A year, a mileage, or a phone number is often the whole utterance.
+    assert clean_transcript("۱۳۸۸") == "۱۳۸۸"
+    assert clean_transcript("۱۳۸۸.") == "۱۳۸۸"
+    assert clean_transcript("1388") == "1388"
+    assert clean_transcript("80000") == "80000"
+    assert clean_transcript("09121234567") == "09121234567"
+
+
 def test_punctuation_only_output_is_empty():
     assert clean_transcript(".") == ""
+    assert clean_transcript("..؟") == ""
     assert clean_transcript("\u200c") == ""
     assert clean_transcript("  ") == ""
     assert clean_transcript("") == ""
