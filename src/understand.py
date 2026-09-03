@@ -8,6 +8,10 @@ from src.cars import parse_km, parse_year
 from src.lexicon import resolve_car
 from src.utils import log, normalize_persian
 
+# The lexicon already answers almost every turn, so the LLM is a short-budget
+# fallback. A long wait here is dead air for the caller.
+LLM_MAP_TIMEOUT_S = 4.0
+
 
 def understand(text: str, phase: str, info: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return canonical fields plus a display string (heard → corrected)."""
@@ -41,6 +45,14 @@ def understand(text: str, phase: str, info: dict[str, Any] | None = None) -> dic
             out["year"] = year
             out["text"] = year
             out["source"] = "parser"
+            out["corrected"] = year != heard
+            return out
+        year = _llm_map_year(heard)
+        if year:
+            out["year"] = year
+            out["text"] = year
+            out["source"] = "llm"
+            out["corrected"] = True
         return out
 
     if phase == "ask_km":
@@ -52,6 +64,36 @@ def understand(text: str, phase: str, info: dict[str, Any] | None = None) -> dic
         return out
 
     return out
+
+
+def _llm_map_year(heard: str) -> str | None:
+    """Last resort for odd phrasings; the answer must still be a valid Shamsi year."""
+    from src.llm import llm
+    from src.years import MAX_YEAR, MIN_YEAR, parse_shamsi_year
+
+    if not llm.is_available():
+        return None
+    prompt = (
+        "از گفتهٔ مشتری فقط «سال ساخت خودرو» را به عدد شمسی چهاررقمی بده.\n"
+        f"بازهٔ مجاز: {MIN_YEAR} تا {MAX_YEAR}.\n"
+        "مثال: «هزار و سیصد و هشتاد و هشت» → 1388 ؛ «هشت و هشت» → 1388 ؛ «نود و نه» → 1399.\n"
+        f"گفته: {heard}\n"
+        'فقط JSON: {"year": 1388} یا {"year": null}'
+    )
+    raw = llm.generate_response(prompt, timeout=LLM_MAP_TIMEOUT_S)
+    from src.utils import extract_json_object
+
+    parsed = extract_json_object(raw) if raw else None
+    if not parsed:
+        return None
+    value = parsed.get("year")
+    if value is None:
+        return None
+    year = parse_shamsi_year(str(value))
+    if year is None:
+        return None
+    log.info("LLM year map %r -> %s", heard, year)
+    return str(year)
 
 
 def _llm_map_car(heard: str, info: dict[str, Any]) -> dict | None:
@@ -71,7 +113,7 @@ def _llm_map_car(heard: str, info: dict[str, Any]) -> dict | None:
         f"قبلاً ثبت شده: {info}\n"
         'فقط JSON: {"make":"...","model":"..."} یا {"make":null,"model":null} اگر هیچ خودرویی نیست.'
     )
-    raw = llm.generate_response(prompt)
+    raw = llm.generate_response(prompt, timeout=LLM_MAP_TIMEOUT_S)
     from src.utils import extract_json_object
 
     parsed = extract_json_object(raw) if raw else None

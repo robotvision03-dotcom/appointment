@@ -65,6 +65,7 @@ class Config:
     whisper_ct2_repo: str
     whisper_threads: int
     whisper_compute: str
+    whisper_prompt: str
     piper_model_path: Path
     piper_config_path: Path
 
@@ -126,8 +127,11 @@ def load_config() -> Config:
             _env("WHISPER_MODEL_PATH", "./models/whisper-persian-v4-ct2")
         ),
         whisper_ct2_repo=_env("WHISPER_CT2_REPO", "AlexAnoshka/fast-whisper-persian-v4"),
-        whisper_threads=int(_env("WHISPER_THREADS", "4") or "4"),
+        # 0 = every core. A car-name prompt is off by default; it triggers
+        # English hallucinations in this fine-tune.
+        whisper_threads=int(_env("WHISPER_THREADS", "0") or "0"),
         whisper_compute=_env("WHISPER_COMPUTE", "int8") or "int8",
+        whisper_prompt=_env("WHISPER_PROMPT"),
         piper_model_path=_resolve_path(
             _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx")
         ),

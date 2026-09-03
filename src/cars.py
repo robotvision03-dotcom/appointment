@@ -163,29 +163,25 @@ def parse_year(text: str) -> str | None:
     """Extract a Shamsi or Gregorian model year. Do not treat mileage as a year."""
     import re
 
-    t = normalize_persian(text)
-    looks_like_km = bool(re.search(r"کیلومتر|کارکرد|(?<!\d)\d{1,3}\s*هزار|هزار\s*کیلومتر", t))
+    from src.years import parse_shamsi_year
 
-    m4 = re.search(r"(13[7-9]\d|14[0-1]\d)", t)
-    if m4:
-        return m4.group(1)
+    t = normalize_persian(text)
+    looks_like_km = bool(re.search(r"کیلومتر|کارکرد|(?<!\d)\d{1,3}\s*هزار", t))
+
+    shamsi = parse_shamsi_year(t)
+    if shamsi is not None and not looks_like_km:
+        return str(shamsi)
+
     m_g = re.search(r"(19[89]\d|20[0-2]\d)", t)
     if m_g:
         n = int(m_g.group(1))
         if 1990 <= n <= 2027:
             return str(n)
     if looks_like_km:
-        return None
-
-    m_named = re.search(r"(?:مدل|سال)\s*(\d{2})(?!\d)", t)
-    m2 = m_named or re.search(r"(?<!\d)(\d{2})(?!\d)", t)
-    if m2:
-        n = int(m2.group(1))
-        if 70 <= n <= 99:
-            return str(1300 + n)
-        if 0 <= n <= 6:
-            return str(1400 + n)
-    return None
+        # «مدل ۱۳۹۹ کارکرد ۸۰ هزار» still carries a real year.
+        m4 = re.search(r"(13[7-9]\d|140\d|1410)", t)
+        return m4.group(1) if m4 else None
+    return str(shamsi) if shamsi is not None else None
 
 
 _KM_WORDS = {
@@ -205,8 +201,10 @@ def parse_km(text: str) -> int | None:
         value = float(m.group(1))
     else:
         value = None
+        # Whole words only, so «سیصد» never reads as «سی».
+        words = re.split(r"[^\w\u0600-\u06FF]+", compact)
         for word, num in _KM_WORDS.items():
-            if word in compact:
+            if word in words:
                 value = float(num)
                 break
         if value is None:
