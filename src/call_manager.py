@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -203,12 +202,7 @@ class CallManager:
         u = understand(text, PHASE_ASK_YEAR, state.patient_info)
         year = u.get("year")
         if not year:
-            # Only a clear mileage phrase may jump ahead; a spoken year must not.
-            spoken = normalize_persian(text)
-            said_km = any(w in spoken for w in ("کیلومتر", "کارکرد")) or bool(
-                re.search(r"\d+\s*(هزار|میلیون)", spoken)
-            )
-            km = parse_km(text) if said_km else None
+            km = parse_km(text)
             if km is not None and km >= 1000:
                 state.patient_info["km"] = km
                 return self._reply(
@@ -216,11 +210,7 @@ class CallManager:
                     text,
                     "این عدد را به‌عنوان کارکرد ثبت کردم. سال ساخت را جدا بگویید؛ مثلاً ۱۳۹۹.",
                 )
-            return self._reply(
-                state,
-                text,
-                "سال ساخت را نگرفتم. مثلاً بگویید هزار و سیصد و هشتاد و هشت، یا هشتاد و هشت.",
-            )
+            return self._reply(state, text, "سال ساخت را عددی بگویید. مثلاً ۱۳۹۹ یا ۲۰۱۸.")
         state.patient_info["year"] = year
         if state.patient_info.get("km"):
             state.phase = PHASE_ASK_NAME

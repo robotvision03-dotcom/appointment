@@ -73,9 +73,6 @@ def health() -> dict:
                 "available": bool(
                     getattr(stt, "whisper", None) and stt.whisper.available
                 ),
-                "runtime_installed": bool(
-                    getattr(stt, "whisper", None) and stt.whisper.runtime_installed
-                ),
                 "path": str(config.whisper_model_path),
             },
             "mode": getattr(stt, "mode", config.stt_engine),

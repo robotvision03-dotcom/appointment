@@ -93,12 +93,7 @@ class PersianLLM:
         except Exception:  # noqa: BLE001
             return []
 
-    def generate_response(
-        self,
-        prompt: str,
-        context: list[dict[str, str]] | None = None,
-        timeout: float | None = None,
-    ) -> str:
+    def generate_response(self, prompt: str, context: list[dict[str, str]] | None = None) -> str:
         messages: list[dict[str, str]] = []
         if context:
             messages.extend(context[-8:])
@@ -111,7 +106,7 @@ class PersianLLM:
             "options": {"temperature": 0.0, "num_predict": 80, "top_p": 0.5},
         }
         try:
-            with self._client(timeout=timeout or 12.0) as client:
+            with self._client(timeout=12.0) as client:
                 resp = client.post(f"{self.url}/api/chat", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
