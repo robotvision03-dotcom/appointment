@@ -67,6 +67,7 @@ class Config:
     whisper_compute: str
     whisper_prompt: str
     whisper_persian_only: bool
+    whisper_max_seconds: int
     piper_model_path: Path
     piper_config_path: Path
 
@@ -133,8 +134,12 @@ def load_config() -> Config:
         whisper_threads=int(_env("WHISPER_THREADS", "0") or "0"),
         whisper_compute=_env("WHISPER_COMPUTE", "int8") or "int8",
         whisper_prompt=_env("WHISPER_PROMPT"),
-        whisper_persian_only=_env("WHISPER_PERSIAN_ONLY", "1").lower()
-        not in ("0", "false", "no", "off"),
+        # Off by default: suppressing ~43k tokens made every decode tens of
+        # seconds slower and often empty. The working Whisper path (7057a98)
+        # did not use it. Set WHISPER_PERSIAN_ONLY=1 only if Cyrillic slips back.
+        whisper_persian_only=_env("WHISPER_PERSIAN_ONLY", "0").lower()
+        in ("1", "true", "yes", "on"),
+        whisper_max_seconds=max(2, int(_env("WHISPER_MAX_SECONDS", "5") or "5")),
         piper_model_path=_resolve_path(
             _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx")
         ),

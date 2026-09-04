@@ -277,7 +277,13 @@ class HearingSTT:
             return ""
         order: list[tuple[str, object]] = []
         if self.mode == "whisper":
-            order = [("whisper", self.whisper), ("shenava", self.shenava)]
+            # Whisper only. Cascading into Shenava on an empty result doubled
+            # latency (12s clip → ~90s) and overwrote a good-enough transcript
+            # with CTC garbage like «پارس پو پارس».
+            if self.whisper.available:
+                order = [("whisper", self.whisper)]
+            else:
+                order = [("shenava", self.shenava)]
         elif self.mode == "gooya":
             order = [("gooya", self.gooya), ("whisper", self.whisper), ("shenava", self.shenava)]
         elif self.mode == "shenava":

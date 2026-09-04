@@ -33,6 +33,13 @@ def test_spoken_years(said, expected):
     assert parse_shamsi_year(said) == expected
 
 
+def test_trailing_conjunction_is_not_a_finished_year():
+    """«هشتاد و» is the speaker still going, not 1380."""
+    assert parse_shamsi_year("یک هزار و سیصد و هشتاد و") is None
+    assert parse_shamsi_year("هزار و سیصد و هشتاد و") is None
+    assert parse_shamsi_year("یک هزار و سیصد و هشتاد و هشت") == 1388
+
+
 def test_year_inside_a_sentence():
     assert parse_shamsi_year("ماشین مدل هشتاد و هشت است") == 1388
     assert parse_shamsi_year("مدل ۹۹ هست") == 1399

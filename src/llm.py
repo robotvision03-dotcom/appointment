@@ -60,6 +60,10 @@ class PersianLLM:
         return urls
 
     def is_available(self) -> bool:
+        if not config.ollama_enabled:
+            self._avail = False
+            self._avail_at = time.monotonic()
+            return False
         now = time.monotonic()
         if self._avail is not None and now - self._avail_at < 20:
             return self._avail

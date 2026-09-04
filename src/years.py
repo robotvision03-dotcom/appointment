@@ -213,6 +213,13 @@ def _expand(n: int) -> int | None:
 
 def parse_shamsi_year(text: str) -> int | None:
     """Best Shamsi year in 1370–1410, or None when the phrase is not a year."""
+    # A trailing «و» means the speaker was still listing a number
+    # («یک هزار و سیصد و هشتاد و» is not 1380).
+    raw = normalize_persian(text).replace("\u200c", " ")
+    raw_parts = re.sub(r"[^\w\u0600-\u06FF]+", " ", raw).split()
+    if raw_parts and raw_parts[-1] == "و":
+        return None
+
     tokens = _tokens(text)
     if not tokens:
         return None

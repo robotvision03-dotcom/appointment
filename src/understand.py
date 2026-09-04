@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.cars import parse_km, parse_year
+from src.config import config
 from src.lexicon import resolve_car
 from src.utils import log, normalize_persian
 
@@ -71,7 +72,7 @@ def _llm_map_year(heard: str) -> str | None:
     from src.llm import llm
     from src.years import MAX_YEAR, MIN_YEAR, parse_shamsi_year
 
-    if not llm.is_available():
+    if not config.ollama_enabled or not llm.is_available():
         return None
     prompt = (
         "از گفتهٔ مشتری فقط «سال ساخت خودرو» را به عدد شمسی چهاررقمی بده.\n"
@@ -99,7 +100,7 @@ def _llm_map_year(heard: str) -> str | None:
 def _llm_map_car(heard: str, info: dict[str, Any]) -> dict | None:
     from src.llm import llm
 
-    if not llm.is_available():
+    if not config.ollama_enabled or not llm.is_available():
         return None
     from src.cars import CATALOG
 

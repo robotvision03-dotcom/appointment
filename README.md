@@ -62,9 +62,15 @@ python -m src
 `stt.whisper.runtime_installed` را ببینید.
 
 `STT_ENGINE=whisper` in `.env`. The checkpoint is forced to `language=fa`.
+With that setting Whisper does **not** fall through to Shenava on an empty
+result (that cascade was the 90-second waits). Leave `WHISPER_PERSIAN_ONLY=0`
+and `OLLAMA_ENABLED=0` for the fast path.
 
 اگر نویز اتاق باعث شود تشخیص بی‌خود شروع شود، `VAD_MIN_ENERGY` را بالا ببرید؛
-اگر صدای آرام اصلاً شنیده نشود، پایین بیاورید (پیش‌فرض ۹۰۰).
+اگر صدای آرام اصلاً شنیده نشود، پایین بیاورید (پیش‌فرض ۵۰۰).
+
+Clips longer than `WHISPER_MAX_SECONDS` (default 5) are trimmed. Whisper
+large-v3 on CPU is roughly realtime at 2–5s and much slower at 12s.
 
 ## سال مدل
 
@@ -80,5 +86,5 @@ python -m src
 ## تست
 
 ```bash
-pytest tests/test_dialogue.py -q
+pytest tests/ -q
 ```

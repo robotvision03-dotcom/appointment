@@ -112,7 +112,8 @@ class WhisperPersianSTT:
         self.last_error: str | None = None
         self._model = None
         self._lock = threading.Lock()
-        self._prompt = config.whisper_prompt
+        # Car-name bias is what made 7057a98 accurate on «پرس» → پژو پارس.
+        self._prompt = (config.whisper_prompt or "").strip() or _car_prompt()
         self._suppress: list[int] | None = None
         if not self.available:
             self.last_error = (
@@ -158,17 +159,33 @@ class WhisperPersianSTT:
                     return False
 
                 threads = max(1, int(config.whisper_threads) or _auto_threads())
-                self._model = WhisperModel(
-                    str(self.model_path),
+                kwargs = dict(
                     device="cpu",
                     compute_type=config.whisper_compute or "int8",
                     cpu_threads=threads,
                     num_workers=1,
                 )
+                # Skip the Hub round-trip that printed
+                # "You are sending unauthenticated requests to the HF Hub"
+                # on every cold start and delayed the first decode ~15s.
+                try:
+                    self._model = WhisperModel(
+                        str(self.model_path), local_files_only=True, **kwargs
+                    )
+                except TypeError:
+                    self._model = WhisperModel(str(self.model_path), **kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Whisper local-only load failed (%s); retrying", exc)
+                    self._model = WhisperModel(str(self.model_path), **kwargs)
                 if config.whisper_persian_only:
                     tokenizer = getattr(self._model, "hf_tokenizer", None)
                     if tokenizer is not None:
                         self._suppress = _persian_only_tokens(tokenizer)
+                        log.warning(
+                            "WHISPER_PERSIAN_ONLY=1 suppresses %s tokens — "
+                            "this is slow on CPU. Leave it off unless needed.",
+                            len(self._suppress) - 1,
+                        )
                 self.last_error = None
                 log.info(
                     "Hearing: %s (%s) %s threads=%s persian_only=%s",
@@ -199,22 +216,24 @@ class WhisperPersianSTT:
             if raw_rms < 0.006:
                 return ""
             samples = prepare_for_asr(audio, 16000).astype(np.float32, copy=False).ravel()
+            cap = max(3200, int(config.whisper_max_seconds) * 16000)
+            if samples.size > cap:
+                samples = samples[-cap:]
+            decode = dict(
+                language="fa",
+                task="transcribe",
+                beam_size=1,
+                best_of=1,
+                vad_filter=False,
+                condition_on_previous_text=False,
+                without_timestamps=True,
+                initial_prompt=self._prompt or None,
+                temperature=0.0,
+            )
+            if self._suppress:
+                decode["suppress_tokens"] = self._suppress
             with self._lock:
-                segments, info = self._model.transcribe(
-                    samples,
-                    language="fa",
-                    task="transcribe",
-                    beam_size=1,
-                    best_of=1,
-                    vad_filter=False,
-                    condition_on_previous_text=False,
-                    without_timestamps=True,
-                    # A car-name prompt makes this fine-tune drift into English
-                    # ("Pژو پانس.", " propagate"), so bias downstream instead.
-                    initial_prompt=self._prompt or None,
-                    temperature=0.0,
-                    suppress_tokens=self._suppress or [-1],
-                )
+                segments, info = self._model.transcribe(samples, **decode)
                 text = clean_transcript("".join(seg.text for seg in segments))
             lang = getattr(info, "language", "fa")
             log.info(

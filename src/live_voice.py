@@ -115,7 +115,9 @@ async def handle_browser_voice(websocket: WebSocket) -> None:
                 energy = pcm16_rms(pcm)
                 duration_ms = int(1000 * (len(pcm) // 2) / sample_rate) or FRAME_MS_ESTIMATE
                 preroll_cap = sample_rate * 2 // 3  # ~300 ms
-                max_bytes = sample_rate * 2 * 12
+                # Keep clips short. Whisper large-v3 int8 on CPU is ~realtime
+                # at 2–5s and tens of seconds at the old 12s cap.
+                max_bytes = sample_rate * 2 * max(2, int(config.whisper_max_seconds))
                 noise_floor = update_noise_floor(noise_floor, float(energy), speech_started)
                 loud = speech_onset(float(energy), noise_floor, float(config.energy_threshold))
 
