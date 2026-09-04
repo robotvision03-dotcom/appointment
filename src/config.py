@@ -66,6 +66,7 @@ class Config:
     whisper_threads: int
     whisper_compute: str
     whisper_prompt: str
+    whisper_persian_only: bool
     piper_model_path: Path
     piper_config_path: Path
 
@@ -89,7 +90,7 @@ class Config:
     stt_sample_rate: int = 16000
     vad_silence_ms: int = 500
     min_utterance_ms: int = 400
-    energy_threshold: int = 900
+    energy_threshold: int = 500
 
     @property
     def twilio_configured(self) -> bool:
@@ -132,6 +133,8 @@ def load_config() -> Config:
         whisper_threads=int(_env("WHISPER_THREADS", "0") or "0"),
         whisper_compute=_env("WHISPER_COMPUTE", "int8") or "int8",
         whisper_prompt=_env("WHISPER_PROMPT"),
+        whisper_persian_only=_env("WHISPER_PERSIAN_ONLY", "1").lower()
+        not in ("0", "false", "no", "off"),
         piper_model_path=_resolve_path(
             _env("PIPER_MODEL_PATH", "./models/piper-voice-fa/fa_IR-mana-medium.onnx")
         ),
@@ -149,7 +152,7 @@ def load_config() -> Config:
         office_address=_env("OFFICE_ADDRESS", "خیابان ایثار، کوچه خواجه پلاک ۲"),
         office_hours_start=_env("OFFICE_HOURS_START", "09:00"),
         office_hours_end=_env("OFFICE_HOURS_END", "17:00"),
-        energy_threshold=int(_env("VAD_MIN_ENERGY", "900") or "900"),
+        energy_threshold=int(_env("VAD_MIN_ENERGY", "500") or "500"),
     )
 
 

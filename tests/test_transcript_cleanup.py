@@ -37,3 +37,29 @@ def test_dirty_whisper_output_still_resolves_to_the_car():
     assert car is not None
     assert car["make"] == "پژو"
     assert car["model"] == "پارس"
+
+
+def test_foreign_alphabets_are_suppressed_at_the_decoder():
+    """«پژو پارس» once came back as «ежоپарс» — all Cyrillic but one letter.
+
+    Cleaning cannot rebuild that word, so the decoder must never reach those
+    tokens in the first place.
+    """
+    import re
+
+    from src.whisper_fa import _persian_only_tokens
+
+    class FakeTokenizer:
+        vocab = ["پژو", " پارس", "ежо", "арс", "Peugeot", "۱۳۸۸", ".", "Ω"]
+
+        def get_vocab_size(self):
+            return len(self.vocab)
+
+        def decode(self, ids):
+            return self.vocab[ids[0]]
+
+    suppressed = set(_persian_only_tokens(FakeTokenizer()))
+    assert -1 in suppressed  # Whisper's own non-speech list is kept
+    kept = [t for i, t in enumerate(FakeTokenizer.vocab) if i not in suppressed]
+    assert kept == ["پژو", " پارس", "۱۳۸۸", "."]
+    assert not any(re.search(r"[A-Za-z\u0400-\u04FF]", t) for t in kept)

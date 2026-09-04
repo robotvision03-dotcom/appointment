@@ -43,6 +43,22 @@ _FOREIGN_LETTER = re.compile(r"[^\W\d_\u0600-\u06FF]")
 _JUNK = re.compile(r"^\W*$")
 
 
+def _persian_only_tokens(tokenizer) -> list[int]:
+    """Token ids that carry a Latin, Cyrillic, or Greek letter.
+
+    This fine-tune sometimes transliterates a whole word — «پژو پارس» came back
+    as «ежоپарс» — and no amount of post-editing recovers that. Suppressing the
+    foreign tokens makes the decoder unable to leave Persian, and costs nothing.
+    """
+    foreign = re.compile(r"[A-Za-z\u0370-\u03FF\u0400-\u04FF]")
+    ids = [-1]  # keep Whisper's own non-speech suppressions
+    for token_id in range(tokenizer.get_vocab_size()):
+        text = tokenizer.decode([token_id])
+        if text and foreign.search(text):
+            ids.append(token_id)
+    return ids
+
+
 def _auto_threads() -> int:
     """Physical cores, capped. Oversubscribing CTranslate2 costs more than it buys."""
     cores = os.cpu_count() or 4
@@ -97,6 +113,7 @@ class WhisperPersianSTT:
         self._model = None
         self._lock = threading.Lock()
         self._prompt = config.whisper_prompt
+        self._suppress: list[int] | None = None
         if not self.available:
             self.last_error = (
                 f"Whisper Persian v4 not found at {self.model_path}. "
@@ -148,13 +165,18 @@ class WhisperPersianSTT:
                     cpu_threads=threads,
                     num_workers=1,
                 )
+                if config.whisper_persian_only:
+                    tokenizer = getattr(self._model, "hf_tokenizer", None)
+                    if tokenizer is not None:
+                        self._suppress = _persian_only_tokens(tokenizer)
                 self.last_error = None
                 log.info(
-                    "Hearing: %s (%s) %s threads=%s",
+                    "Hearing: %s (%s) %s threads=%s persian_only=%s",
                     self.engine,
                     self.model_id,
                     self.model_path,
                     threads,
+                    len(self._suppress) - 1 if self._suppress else 0,
                 )
                 return True
             except Exception as exc:  # noqa: BLE001
@@ -191,6 +213,7 @@ class WhisperPersianSTT:
                     # ("Pژو پانس.", " propagate"), so bias downstream instead.
                     initial_prompt=self._prompt or None,
                     temperature=0.0,
+                    suppress_tokens=self._suppress or [-1],
                 )
                 text = clean_transcript("".join(seg.text for seg in segments))
             lang = getattr(info, "language", "fa")
