@@ -61,7 +61,10 @@ python -m src
 اگر `faster_whisper` نصب نباشد، برنامه بی‌صدا روی Shenava می‌افتد؛ در `/health` مقدار
 `stt.whisper.runtime_installed` را ببینید.
 
-`STT_ENGINE=whisper` in `.env`. The checkpoint is forced to `language=fa` and biased with Iranian car names.
+`STT_ENGINE=whisper` in `.env`. The checkpoint is forced to `language=fa`.
+
+اگر نویز اتاق باعث شود تشخیص بی‌خود شروع شود، `VAD_MIN_ENERGY` را بالا ببرید؛
+اگر صدای آرام اصلاً شنیده نشود، پایین بیاورید (پیش‌فرض ۹۰۰).
 
 ## سال مدل
 
